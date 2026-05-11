@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ловец Пиццы 🍕</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #87CEEB; /* Цвет неба */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        #game-container {
+            position: relative;
+        }
+        canvas {
+            background-color: #f0f8ff;
+            border: 4px solid #333;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            display: block;
+        }
+        #ui {
+            position: absolute;
+            top: 15px;
+            width: 100%;
+            display: flex;
+            justify-content: space-around;
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+            pointer-events: none;
+            text-shadow: 1px 1px 2px white;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <div id="ui">
+            <div>Счет: <span id="score">0</span></div>
+            <div>Жизни: <span id="lives">3</span></div>
+        </div>
+        <!-- Холст для отрисовки игры -->
+        <canvas id="gameCanvas" width="500" height="700"></canvas>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreElement = document.getElementById('score');
+        const livesElement = document.getElementById('lives');
+
+        // Игровые переменные
+        let score = 0;
+        let lives = 3;
+        let isGameOver = false;
+        let frameCount = 0;
+        let pizzaSpawnRate = 90; // Пицца появляется каждые 60 кадров
+
+        // Игрок (повар)
+        const player = {
+            x: canvas.width / 2 - 35,
+            y: canvas.height - 90,
+            width: 70,
+            height: 70,
+            speed: 8,
+            dx: 0
+        };
+
+        // Массив для хранения пицц
+        const pizzas = [];
+
+        // Функция создания новой пиццы
+        function createPizza() {
+            const size = 50;
+            const x = Math.random() * (canvas.width - size);
+            const speed = 3 + Math.random() * 4; // Случайная скорость падения
+            pizzas.push({ x: x, y: -size, size: size, speed: speed });
+        }
+
+        // Отрисовка игрока
+        function drawPlayer() {
+            ctx.font = "60px Arial";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText("🧑‍🍳", player.x + player.width/2, player.y + player.height/2);
+        }
+
+        // Отрисовка пицц
+        function drawPizzas() {
+            ctx.font = "40px Arial";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            pizzas.forEach(pizza => {
+                ctx.fillText("🍕", pizza.x + pizza.size/2, pizza.y + pizza.size/2);
+            });
+        }
+
+        // Обновление логики игры
+        function update() {
+            if (isGameOver) return;
+
+            // Движение игрока
+            player.x += player.dx;
+            
+            // Ограничение выхода за края экрана
+            if (player.x < 0) player.x = 0;
+            if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
+
+            // Спавн пицц
+            frameCount++;
+            if (frameCount % pizzaSpawnRate === 0) {
+                createPizza();
+                // Постепенно увеличиваем сложность (пиццы падают чаще)
+                if (pizzaSpawnRate > 20) pizzaSpawnRate -= 1; 
+            }
+
+            // Обновление позиций пицц
+            for (let i = pizzas.length - 1; i >= 0; i--) {
+                let p = pizzas[i];
+                p.y += p.speed;
+
+                // Проверка столкновений (игрок поймал пиццу)
+                if (p.x < player.x + player.width - 15 &&
+                    p.x + p.size > player.x + 15 &&
+                    p.y < player.y + player.height &&
+                    p.y + p.size > player.y + 20) {
+                    
+                    score += 10;
+                    scoreElement.innerText = score;
+                    pizzas.splice(i, 1); // Удаляем пойманную пиццу
+                    continue;
+                }
+
+                // Пицца упала на землю (промах)
+                if (p.y > canvas.height) {
+                    lives--;
+                    livesElement.innerText = lives;
+                    pizzas.splice(i, 1); // Удаляем упавшую пиццу
+                    
+                    if (lives <= 0) {
+                        isGameOver = true;
+                    }
+                }
+            }
+        }
+
+        // Отрисовка всех элементов на холсте
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            drawPlayer();
+            drawPizzas();
+
+            // Экран окончания игры
+            if (isGameOver) {
+                ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                ctx.fillStyle = "white";
+                ctx.textAlign = "center";
+                
+                ctx.font = "bold 40px Arial";
+                ctx.fillText("ИГРА ОКОНЧЕНА", canvas.width / 2, canvas.height / 2 - 20);
+                
+                ctx.font = "20px Arial";
+                ctx.fillText(`Ваш итоговый счет: ${score}`, canvas.width / 2, canvas.height / 2 + 30);
+                
+                ctx.font = "16px Arial";
+                ctx.fillText("Кликните по экрану, чтобы начать заново", canvas.width / 2, canvas.height / 2 + 80);
+            }
+        }
+
+        // Главный игровой цикл
+        function loop() {
+            update();
+            draw();
+            if (!isGameOver) {
+                requestAnimationFrame(loop);
+            }
+        }
+
+        // --- УПРАВЛЕНИЕ ---
+
+        // Клавиатура (стрелки и A/D)
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') player.dx = -player.speed;
+            if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') player.dx = player.speed;
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A' || 
+                e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+                player.dx = 0;
+            }
+        });
+
+        // Мышь и сенсорный экран (для игры на телефоне или мышкой)
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            player.x = mouseX - player.width / 2;
+        });
+
+        canvas.addEventListener('touchmove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const touchX = e.touches[0].clientX - rect.left;
+            player.x = touchX - player.width / 2;
+            e.preventDefault(); // Предотвращаем прокрутку экрана на телефоне
+        }, { passive: false });
+
+        // Перезапуск игры по клику
+        canvas.addEventListener('click', () => {
+            if (isGameOver) {
+                score = 0;
+                lives = 3;
+                pizzas.length = 0;
+                pizzaSpawnRate = 60;
+                isGameOver = false;
+                scoreElement.innerText = score;
+                livesElement.innerText = lives;
+                loop();
+            }
+        });
+
+        // Запуск игры
+        loop();
+    </script>
+</body>
+</html>
