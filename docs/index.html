@@ -2,27 +2,45 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Ловец Пиццы 🍕</title>
     <style>
         body {
             margin: 0;
-            padding: 0;
+            padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right))
+                max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+            box-sizing: border-box;
             overflow: hidden;
             background-color: #87CEEB; /* Цвет неба */
             display: flex;
             justify-content: center;
             align-items: center;
-            height: 100vh;
+            min-height: 100vh;
+            min-height: 100dvh;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
         #game-container {
             position: relative;
+            width: min(calc(100vw - 16px), calc((100vh - 16px) * 500 / 700));
+            max-width: 500px;
+            max-height: calc(100vh - 16px);
+        }
+        @supports (height: 100dvh) {
+            #game-container {
+                width: min(calc(100vw - 16px), calc((100dvh - 16px) * 500 / 700));
+                max-height: calc(100dvh - 16px);
+            }
         }
         canvas {
             background-color: #f0f8ff;
             border: 4px solid #333;
-            border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); display: block;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            display: block;
+            width: 100%;
+            height: auto;
+            aspect-ratio: 500 / 700;
+            touch-action: none;
         }
         #ui {
             position: absolute;
@@ -54,6 +72,12 @@
         const ctx = canvas.getContext('2d');
         const scoreElement = document.getElementById('score');
         const livesElement = document.getElementById('lives');
+
+        /** Display scaling: internal buffer stays 500×700; map pointer X from CSS pixels to canvas X */
+        function pointerToCanvasX(clientX) {
+            const rect = canvas.getBoundingClientRect();
+            return (clientX - rect.left) * (canvas.width / rect.width);
+        }
 
         // Игровые переменные
         let score = 0;
@@ -202,16 +226,21 @@
 
         // Мышь и сенсорный экран (для игры на телефоне или мышкой)
         canvas.addEventListener('mousemove', (e) => {
-            const rect = canvas.getBoundingClientRect();
-            const mouseX = e.clientX - rect.left;
+            const mouseX = pointerToCanvasX(e.clientX);
             player.x = mouseX - player.width / 2;
         });
 
+        canvas.addEventListener('touchstart', (e) => {
+            if (e.touches.length) {
+                player.x = pointerToCanvasX(e.touches[0].clientX) - player.width / 2;
+            }
+        }, { passive: true });
+
         canvas.addEventListener('touchmove', (e) => {
-            const rect = canvas.getBoundingClientRect();
-            const touchX = e.touches[0].clientX - rect.left;
-            player.x = touchX - player.width / 2;
-            e.preventDefault(); // Предотвращаем прокрутку экрана на телефоне
+            if (e.touches.length) {
+                player.x = pointerToCanvasX(e.touches[0].clientX) - player.width / 2;
+            }
+            e.preventDefault();
         }, { passive: false });
 
         // Перезапуск игры по клику
