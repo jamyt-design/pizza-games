@@ -5,32 +5,65 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ловец Пиццы 🍕</title>
     <style>
+        :root {
+            --frame-pad-x: 16px;
+            --frame-pad-y: 16px;
+            --frame-hud-gap: 88px; /* HUD + breathing room above canvas */
+        }
+        html {
+            box-sizing: border-box;
+        }
+        *, *::before, *::after {
+            box-sizing: inherit;
+        }
         body {
             margin: 0;
-            padding: 0;
-            overflow: hidden;
+            padding: max(var(--frame-pad-y), env(safe-area-inset-top, 0px))
+                     max(var(--frame-pad-x), env(safe-area-inset-right, 0px))
+                     max(var(--frame-pad-y), env(safe-area-inset-bottom, 0px))
+                     max(var(--frame-pad-x), env(safe-area-inset-left, 0px));
+            overflow-x: hidden;
+            overflow-y: auto;
             background-color: #87CEEB; /* Цвет неба */
             display: flex;
             justify-content: center;
             align-items: center;
-            height: 100vh;
+            min-height: 100dvh;
+            min-height: 100svh;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
         #game-container {
             position: relative;
+            width: 100%;
+            max-width: min(500px, 100%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
         }
         /* Stacking: board 0 → canvas 1 → player 2 → HUD 3 */
         .canvas-stack {
             position: relative;
-            display: inline-block;
             z-index: 0;
+            width: min(
+                500px,
+                100%,
+                calc((min(100dvh, 100svh) - var(--frame-hud-gap) - 2 * var(--frame-pad-y)) * 500 / 700)
+            );
+            aspect-ratio: 500 / 700;
+            max-width: 100%;
         }
         canvas {
             background-color: #f0f8ff;
             border: 4px solid #333;
-            border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); display: block;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            display: block;
             position: relative;
             z-index: 1;
+            width: 100%;
+            height: 100%;
+            box-sizing: border-box;
+            touch-action: none;
         }
         #player-character {
             position: absolute;
@@ -106,24 +139,39 @@
 
         // Функция создания новой пиццы
         function createPizza() {
-            const size = 50;
+            const size = 80;
             const x = Math.random() * (canvas.width - size);
             const speed = 3 + Math.random() * 4; // Случайная скорость падения
             pizzas.push({ x: x, y: -size, size: size, speed: speed });
         }
 
+        function canvasDisplayScale() {
+            const rect = canvas.getBoundingClientRect();
+            return {
+                sx: rect.width / canvas.width,
+                sy: rect.height / canvas.height
+            };
+        }
+
+        function clientXToCanvasX(clientX) {
+            const rect = canvas.getBoundingClientRect();
+            return ((clientX - rect.left) / rect.width) * canvas.width;
+        }
+
         // Персонаж в DOM-слое (z-index выше холста), позиция совпадает с hitbox игрока
         function syncPlayerCharacterDom() {
-            playerCharacterEl.style.left = `${canvasBorder + player.x}px`;
-            playerCharacterEl.style.top = `${canvasBorder + player.y}px`;
-            playerCharacterEl.style.width = `${player.width}px`;
-            playerCharacterEl.style.height = `${player.height}px`;
+            const { sx, sy } = canvasDisplayScale();
+            playerCharacterEl.style.left = `${(canvasBorder + player.x) * sx}px`;
+            playerCharacterEl.style.top = `${(canvasBorder + player.y) * sy}px`;
+            playerCharacterEl.style.width = `${player.width * sx}px`;
+            playerCharacterEl.style.height = `${player.height * sy}px`;
+            playerCharacterEl.style.fontSize = `${Math.round(120 * Math.min(sx, sy))}px`;
             playerCharacterEl.style.visibility = isGameOver ? 'hidden' : 'visible';
         }
 
         // Отрисовка пицц
         function drawPizzas() {
-            ctx.font = "40px Arial";
+            ctx.font = "70px Arial";
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
             pizzas.forEach(pizza => {
@@ -233,14 +281,12 @@
 
         // Мышь и сенсорный экран (для игры на телефоне или мышкой)
         canvas.addEventListener('mousemove', (e) => {
-            const rect = canvas.getBoundingClientRect();
-            const mouseX = e.clientX - rect.left;
+            const mouseX = clientXToCanvasX(e.clientX);
             player.x = mouseX - player.width / 2;
         });
 
         canvas.addEventListener('touchmove', (e) => {
-            const rect = canvas.getBoundingClientRect();
-            const touchX = e.touches[0].clientX - rect.left;
+            const touchX = clientXToCanvasX(e.touches[0].clientX);
             player.x = touchX - player.width / 2;
             e.preventDefault(); // Предотвращаем прокрутку экрана на телефоне
         }, { passive: false });
@@ -260,6 +306,7 @@
         });
 
         // Запуск игры
+        window.addEventListener('resize', syncPlayerCharacterDom);
         loop();
     </script>
 </body>
