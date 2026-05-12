@@ -19,14 +19,38 @@
         #game-container {
             position: relative;
         }
+        /* Stacking: board 0 → canvas 1 → player 2 → HUD 3 */
+        .canvas-stack {
+            position: relative;
+            display: inline-block;
+            z-index: 0;
+        }
         canvas {
             background-color: #f0f8ff;
             border: 4px solid #333;
             border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); display: block;
+            position: relative;
+            z-index: 1;
+        }
+        #player-character {
+            position: absolute;
+            z-index: 2;
+            pointer-events: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 120px;
+            line-height: 1;
+            /* align with canvas coordinate system (inside the border) */
+            margin: 0;
+            box-sizing: border-box;
         }
         #ui {
             position: absolute;
+            z-index: 3;
             top: 15px;
+            left: 0;
+            right: 0;
             width: 100%;
             display: flex;
             justify-content: space-around;
@@ -45,8 +69,11 @@
             <div>Счет: <span id="score">0</span></div>
             <div>Жизни: <span id="lives">3</span></div>
         </div>
-        <!-- Холст для отрисовки игры -->
-        <canvas id="gameCanvas" width="500" height="700"></canvas>
+        <div class="canvas-stack">
+            <!-- Холст для отрисовки игры -->
+            <canvas id="gameCanvas" width="500" height="700"></canvas>
+            <div id="player-character" aria-hidden="true">🧑‍🍳</div>
+        </div>
     </div>
 
     <script>
@@ -54,6 +81,8 @@
         const ctx = canvas.getContext('2d');
         const scoreElement = document.getElementById('score');
         const livesElement = document.getElementById('lives');
+        const playerCharacterEl = document.getElementById('player-character');
+        const canvasBorder = 4; /* matches canvas border width in CSS */
 
         // Игровые переменные
         let score = 0;
@@ -66,8 +95,8 @@
         const player = {
             x: canvas.width / 2 - 35,
             y: canvas.height - 90,
-            width: 170,
-            height: 170,
+            width: 130,
+            height: 130,
             speed: 8,
             dx: 0
         };
@@ -83,12 +112,13 @@
             pizzas.push({ x: x, y: -size, size: size, speed: speed });
         }
 
-        // Отрисовка игрока
-        function drawPlayer() {
-            ctx.font = "160px Arial";
-            ctx.textAlign = "center";
-            ctx.textBaseline = "middle";
-            ctx.fillText("🧑‍🍳", player.x + player.width/2, player.y + player.height/2);
+        // Персонаж в DOM-слое (z-index выше холста), позиция совпадает с hitbox игрока
+        function syncPlayerCharacterDom() {
+            playerCharacterEl.style.left = `${canvasBorder + player.x}px`;
+            playerCharacterEl.style.top = `${canvasBorder + player.y}px`;
+            playerCharacterEl.style.width = `${player.width}px`;
+            playerCharacterEl.style.height = `${player.height}px`;
+            playerCharacterEl.style.visibility = isGameOver ? 'hidden' : 'visible';
         }
 
         // Отрисовка пицц
@@ -97,7 +127,7 @@
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
             pizzas.forEach(pizza => {
-                ctx.fillText("💣", pizza.x + pizza.size/2, pizza.y + pizza.size/2);
+                ctx.fillText("🍕", pizza.x + pizza.size/2, pizza.y + pizza.size/2);
             });
         }
 
@@ -145,6 +175,7 @@
                     
                     if (lives <= 0) {
                         isGameOver = true;
+                        pizzaSpawnRate = 90;
                     }
                 }
             }
@@ -153,9 +184,9 @@
         // Отрисовка всех элементов на холсте
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            
-            drawPlayer();
+
             drawPizzas();
+            syncPlayerCharacterDom();
 
             // Экран окончания игры
             if (isGameOver) {
@@ -220,7 +251,7 @@
                 score = 0;
                 lives = 3;
                 pizzas.length = 0;
-                pizzaSpawnRate = 60;
+                pizzaSpawnRate = 90;
                 isGameOver = false;
                 scoreElement.innerText = score;
                 livesElement.innerText = lives;
