@@ -66,8 +66,8 @@
         const player = {
             x: canvas.width / 2 - 35,
             y: canvas.height - 90,
-            width: 70,
-            height: 70,
+            width: 170,
+            height: 170,
             speed: 8,
             dx: 0
         };
@@ -85,7 +85,7 @@
 
         // Отрисовка игрока
         function drawPlayer() {
-            ctx.font = "60px Arial";
+            ctx.font = "160px Arial";
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
             ctx.fillText("🧑‍🍳", player.x + player.width/2, player.y + player.height/2);
