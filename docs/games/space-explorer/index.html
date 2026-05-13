@@ -256,10 +256,15 @@
             /** Screen/world pixels: distance from ship center to emoji center for pickup */
             const COLLECT_HIT_RADIUS = 48;
 
-            /** World-space samples for dotted trail */
+            /** Trail dots spaced by world distance; spacing grows with speed so fast flight stays sparse. */
             const trail = [];
-            const TRAIL_MAX = 320;
+            const TRAIL_MAX_AGE_MS = 5000;
+            /** Failsafe cap if age pruning ever lags */
+            const TRAIL_MAX_POINTS = 50;
             const TRAIL_MIN_DIST = 10;
+            /** Extra world px between dots per unit linear speed (rarer trail when moving fast). */
+            const TRAIL_DIST_PER_SPEED = 0.04;
+            const TRAIL_MAX_DIST = 2000;
             let trailLastWx = 0;
             let trailLastWy = 0;
             let trailPrimed = false;
@@ -520,15 +525,15 @@
                 }
             });
 
-            function step(dt) {
+            function step(dt, nowMs) {
                 const m = PHYS.mass;
                 const I = PHYS.momentOfInertia;
 
                 let thrustInput = 0;
                 let torqueInput = 0;
 
-                if (keys.ArrowUp) thrustInput += 2;
-                if (keys.ArrowDown) thrustInput -= 1.35;
+                if (keys.ArrowUp) thrustInput += 10;
+                if (keys.ArrowDown) thrustInput -= 20;
                 if (keys.ArrowLeft) torqueInput -= 2;
                 if (keys.ArrowRight) torqueInput += 2;
 
@@ -537,7 +542,7 @@
                     thrustInput -= joystickVec.y;
                 }
 
-                const thrustClamped = Math.max(-0.5, Math.min(1, thrustInput));
+                const thrustClamped = Math.max(-0.5, Math.max(1, thrustInput));
                 const torqueClamped = Math.max(-1, Math.min(1, torqueInput));
                 lastThrustInput = thrustClamped;
 
@@ -569,25 +574,55 @@
 
                 wrapStars();
                 clampCollectiblesNearShip();
-                recordTrail();
+                recordTrail(nowMs);
             }
 
-            function recordTrail() {
+            function pruneTrail(nowMs) {
+                while (trail.length > 0 && nowMs - trail[0].t >= TRAIL_MAX_AGE_MS) {
+                    trail.shift();
+                }
+                if (trail.length === 0) trailPrimed = false;
+            }
+
+            function recordTrail(nowMs) {
                 if (!trailPrimed) {
                     trailPrimed = true;
                     trailLastWx = ship.wx;
                     trailLastWy = ship.wy;
-                    trail.push({ wx: ship.wx, wy: ship.wy });
+                    trail.push({ wx: ship.wx, wy: ship.wy, t: nowMs });
                     return;
                 }
-                const dx = ship.wx - trailLastWx;
-                const dy = ship.wy - trailLastWy;
-                if (dx * dx + dy * dy >= TRAIL_MIN_DIST * TRAIL_MIN_DIST) {
-                    trail.push({ wx: ship.wx, wy: ship.wy });
-                    trailLastWx = ship.wx;
-                    trailLastWy = ship.wy;
-                    while (trail.length > TRAIL_MAX) trail.shift();
+                const speed = Math.hypot(ship.vx, ship.vy);
+                const minD = Math.min(
+                    TRAIL_MAX_DIST,
+                    TRAIL_MIN_DIST + speed * TRAIL_DIST_PER_SPEED
+                );
+                const minDSq = minD * minD;
+                let sx = trailLastWx;
+                let sy = trailLastWy;
+                const ex = ship.wx;
+                const ey = ship.wy;
+                let dx = ex - sx;
+                let dy = ey - sy;
+                let lenSq = dx * dx + dy * dy;
+                if (lenSq < minDSq) return;
+
+                const len = Math.sqrt(lenSq);
+                const ux = dx / len;
+                const uy = dy / len;
+                let remain = len;
+                const maxDotsPerFrame = 48;
+                let added = 0;
+                while (remain >= minD && added < maxDotsPerFrame) {
+                    sx += ux * minD;
+                    sy += uy * minD;
+                    remain -= minD;
+                    trail.push({ wx: sx, wy: sy, t: nowMs });
+                    added++;
                 }
+                while (trail.length > TRAIL_MAX_POINTS) trail.shift();
+                trailLastWx = sx;
+                trailLastWy = sy;
             }
 
             function drawShip() {
@@ -767,8 +802,9 @@
                 const dt = Math.min(0.05, (now - lastT) / 1000);
                 const nowSec = now / 1000;
                 lastT = now;
+                pruneTrail(now);
                 resize();
-                step(dt);
+                step(dt, now);
                 checkCollectibles(nowSec);
 
                 const speed = Math.hypot(ship.vx, ship.vy);
