@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Space explorer</title>
+    <style>
+        :root {
+            --frame-pad: max(12px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px))
+                max(12px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
+        }
+        html {
+            box-sizing: border-box;
+            height: 100%;
+            overflow: hidden;
+        }
+        *, *::before, *::after {
+            box-sizing: inherit;
+        }
+        body {
+            margin: 0;
+            padding: var(--frame-pad);
+            height: 100%;
+            min-height: 100%;
+            min-height: 100dvh;
+            min-height: 100svh;
+            min-height: -webkit-fill-available;
+            background: #0a0e1a;
+            color: #e2e8f0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            overflow: hidden;
+            max-width: 100vw;
+        }
+        #game-container {
+            position: relative;
+            flex: 1 1 0;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+            width: 100%;
+            max-width: 100%;
+        }
+        #game-container > .game-chrome--spread {
+            width: 100%;
+            flex-shrink: 0;
+        }
+        .canvas-wrap {
+            position: relative;
+            flex: 1 1 0;
+            min-height: 0;
+            min-width: 0;
+            width: 100%;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid rgba(148, 163, 184, 0.25);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+        }
+        #gameCanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            touch-action: none;
+            background: radial-gradient(ellipse 120% 80% at 50% 20%, #151b2e 0%, #0a0e1a 55%);
+        }
+        #hud {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            right: 10px;
+            pointer-events: none;
+            font-size: clamp(11px, 2.8vw, 13px);
+            color: rgba(226, 232, 240, 0.85);
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+            display: flex;
+            justify-content: flex-start;
+            align-items: flex-start;
+            gap: 10px;
+            flex-wrap: wrap;
+            z-index: 2;
+            min-width: 0;
+            overflow-wrap: anywhere;
+        }
+        #hud .hud-meta {
+            flex: 1;
+            min-width: 0;
+            opacity: 0.75;
+            overflow-wrap: anywhere;
+        }
+        #scoreHud {
+            margin-left: auto;
+            text-align: right;
+            font-size: 14px;
+            line-height: 1.45;
+            max-width: min(52%, 280px);
+        }
+        #scoreHud:empty {
+            display: none;
+        }
+        #scoreHud .score-row {
+            display: block;
+            white-space: nowrap;
+        }
+        #hint {
+            position: absolute;
+            bottom: max(100px, calc(env(safe-area-inset-bottom, 0px) + 88px));
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: clamp(10px, 2.6vw, 12px);
+            color: rgba(148, 163, 184, 0.9);
+            text-align: center;
+            pointer-events: none;
+            max-width: min(92%, calc(100% - 24px));
+            padding: 0 8px;
+            box-sizing: border-box;
+            z-index: 2;
+            overflow-wrap: anywhere;
+        }
+        .joystick {
+            position: absolute;
+            left: max(16px, env(safe-area-inset-left, 0px));
+            bottom: max(16px, env(safe-area-inset-bottom, 0px));
+            width: 120px;
+            height: 120px;
+            z-index: 3;
+            touch-action: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .joystick__ring {
+            position: absolute;
+            inset: 0;
+            border-radius: 50%;
+            background: rgba(15, 23, 42, 0.55);
+            border: 2px solid rgba(148, 163, 184, 0.35);
+            box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.35);
+        }
+        .joystick__knob {
+            position: absolute;
+            width: 44px;
+            height: 44px;
+            margin: -22px 0 0 -22px;
+            left: 50%;
+            top: 50%;
+            border-radius: 50%;
+            background: radial-gradient(circle at 30% 30%, #64748b, #334155);
+            border: 2px solid rgba(226, 232, 240, 0.35);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+            pointer-events: none;
+        }
+        @media (min-width: 900px) {
+            .joystick {
+                display: none;
+            }
+            #hint {
+                bottom: 16px;
+            }
+        }
+    </style>
+    <link rel="stylesheet" href="../../css/game-chrome.css">
+</head>
+<body>
+    <div id="game-container">
+        <div class="canvas-wrap">
+            <canvas id="gameCanvas" aria-label="Space explorer playfield"></canvas>
+            <div id="hud">
+                <span>Speed: <span id="speedHud">0</span> · Heading rate: <span id="omegaHud">0</span></span>
+                <span class="hud-meta">Newtonian flight (F = ma, τ = Iα)</span>
+                <div id="scoreHud" aria-live="polite" aria-label="Collected items"></div>
+            </div>
+            <p id="hint">↑ forward · ← → turn · Space: brake · Phone: circle stick</p>
+            <div class="joystick" id="joystick" aria-hidden="true" role="presentation">
+                <div class="joystick__ring"></div>
+                <div class="joystick__knob" id="joystickKnob"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        (function () {
+            const canvas = document.getElementById('gameCanvas');
+            const ctx = canvas.getContext('2d');
+            const speedHud = document.getElementById('speedHud');
+            const omegaHud = document.getElementById('omegaHud');
+            const scoreHud = document.getElementById('scoreHud');
+            const joystickEl = document.getElementById('joystick');
+            const joystickKnob = document.getElementById('joystickKnob');
+
+            /** SI-style units in arbitrary game scale: mass [u], force [u·m/s²], inertia [u·m²] */
+            const PHYS = {
+                mass: 120,
+                momentOfInertia: 2800,
+                maxThrust: 1350,
+                maxTorque: 7800,
+                linearDrag: 0.08,
+                angularDrag: 1.4
+            };
+
+            const keys = {
+                ArrowUp: false,
+                ArrowDown: false,
+                ArrowLeft: false,
+                ArrowRight: false,
+                ' ': false
+            };
+
+            /** Last-frame thrust / torque after clamping (for visuals) */
+            let lastThrustInput = 0;
+
+            let joystickVec = { x: 0, y: 0 };
+            let joystickActive = false;
+            let joystickPointerId = null;
+            let lastT = performance.now();
+
+            const ship = {
+                /** World position (m); ship drawn at screen center, world scrolls */
+                wx: 0,
+                wy: 0,
+                vx: 0,
+                vy: 0,
+                angle: -Math.PI / 2,
+                omega: 0
+            };
+
+            /** Background stars: each has world (x,y) and parallax ∈ (0,1) — lower = farther, slower drift */
+            const stars = [];
+            const STAR_LAYERS = [
+                { count: 220, parallax: 0.06, rMin: 0.5, rMax: 1.1, aMul: 0.35 },
+                { count: 280, parallax: 0.18, rMin: 0.6, rMax: 1.5, aMul: 0.5 },
+                { count: 320, parallax: 0.38, rMin: 0.7, rMax: 1.8, aMul: 0.65 },
+                { count: 200, parallax: 0.62, rMin: 0.8, rMax: 2.2, aMul: 0.85 }
+            ];
+            const STAR_FIELD = 9000;
+
+            /** Same plane as ship (parallax 1): collectible emojis */
+            const COLLECTIBLES = [];
+            const COLLECTIBLE_COUNT = 5;
+            /** Max distance from ship (px, world == screen offset) for spawns / clamp */
+            const COLLECTIBLE_MAX_SCREEN_MULT = 1.5;
+            /** Min spawn distance as fraction of min screen dimension */
+            const COLLECTIBLE_MIN_SCREEN_MULT = 0.18;
+            /** Screen padding: if emoji center is outside this inset, draw edge hint */
+            const COLLECTIBLE_ONSCREEN_PAD = 40;
+            /** Pick each game’s items from this pool */
+            const FUN_EMOJI_POOL = [
+                '🍕', '🦄', '🚀', '🌈', '🎮', '🦖', '🍦', '🎪', '👾', '💫',
+                '🐸', '🎁', '🌟', '🍩', '🛸', '🔮', '🎸', '🌮', '🐙', '☄️',
+                '🎈', '🤖', '✨', '🥳', '💎', '🍉', '🎨', '👽', '🪐', '🦆',
+                '🍌', '🧀', '🎲', '💀', '🌺', '🏆', '🍭', '🦊', '🌙', '⚡',
+                '🍪', '🎂', '🐧', '🦋', '🌻', '🎯', '🧸', '🍿', '🎧', '🐝',
+                '🦑', '🍒', '🎳', '🌊', '🦴', '🍜', '🎹', '🐲', '🪩', '🧁'
+            ];
+            /** emoji string → times collected */
+            const collectedByEmoji = new Map();
+            /** Screen/world pixels: distance from ship center to emoji center for pickup */
+            const COLLECT_HIT_RADIUS = 48;
+
+            /** World-space samples for dotted trail */
+            const trail = [];
+            const TRAIL_MAX = 320;
+            const TRAIL_MIN_DIST = 10;
+            let trailLastWx = 0;
+            let trailLastWy = 0;
+            let trailPrimed = false;
+
+            function randRange(a, b) {
+                return a + Math.random() * (b - a);
+            }
+
+            function initStars() {
+                stars.length = 0;
+                for (const layer of STAR_LAYERS) {
+                    for (let i = 0; i < layer.count; i++) {
+                        stars.push({
+                            x: randRange(-STAR_FIELD, STAR_FIELD),
+                            y: randRange(-STAR_FIELD, STAR_FIELD),
+                            parallax: layer.parallax,
+                            r: randRange(layer.rMin, layer.rMax),
+                            a: (0.25 + Math.random() * 0.55) * layer.aMul
+                        });
+                    }
+                }
+                stars.sort((a, b) => a.parallax - b.parallax);
+            }
+
+            function pickFunEmoji() {
+                return FUN_EMOJI_POOL[(Math.random() * FUN_EMOJI_POOL.length) | 0];
+            }
+
+            function collectibleRingRadiiPx() {
+                const minDim = Math.min(canvas.width, canvas.height);
+                const maxR = COLLECTIBLE_MAX_SCREEN_MULT * minDim;
+                let minR = Math.max(70, COLLECTIBLE_MIN_SCREEN_MULT * minDim);
+                if (minR >= maxR * 0.92) minR = maxR * 0.35;
+                return { minR, maxR };
+            }
+
+            function placeCollectibleInRing(c) {
+                const { minR, maxR } = collectibleRingRadiiPx();
+                const ang = Math.random() * Math.PI * 2;
+                const dist = randRange(minR, maxR);
+                c.x = ship.wx + Math.cos(ang) * dist;
+                c.y = ship.wy + Math.sin(ang) * dist;
+            }
+
+            function spawnCollectibleNearShip() {
+                const c = {
+                    x: 0,
+                    y: 0,
+                    emoji: pickFunEmoji(),
+                    phase: Math.random() * Math.PI * 2,
+                    spin: (Math.random() - 0.5) * 0.8,
+                    size: 20 + Math.random() * 18
+                };
+                placeCollectibleInRing(c);
+                COLLECTIBLES.push(c);
+            }
+
+            function initCollectibles() {
+                COLLECTIBLES.length = 0;
+                collectedByEmoji.clear();
+                scoreHud.textContent = '';
+                for (let i = 0; i < COLLECTIBLE_COUNT; i++) {
+                    spawnCollectibleNearShip();
+                }
+            }
+
+            function replenishCollectibles() {
+                while (COLLECTIBLES.length < COLLECTIBLE_COUNT) {
+                    spawnCollectibleNearShip();
+                }
+            }
+
+            function updateScoreHud() {
+                scoreHud.textContent = '';
+                const entries = [...collectedByEmoji.entries()].filter(([, n]) => n > 0);
+                entries.sort((a, b) => b[1] - a[1]);
+                for (const [emoji, n] of entries) {
+                    const row = document.createElement('span');
+                    row.className = 'score-row';
+                    row.textContent = `${emoji} × ${n}`;
+                    scoreHud.appendChild(row);
+                }
+            }
+
+            function checkCollectibles(nowSec) {
+                const scale = Math.min(canvas.width, canvas.height) / 520;
+                const r2 = (COLLECT_HIT_RADIUS * scale) ** 2;
+                for (let i = COLLECTIBLES.length - 1; i >= 0; i--) {
+                    const c = COLLECTIBLES[i];
+                    const bob = Math.sin(nowSec * 1.3 + c.phase) * 6 * scale;
+                    const dx = c.x - ship.wx;
+                    const dy = c.y + bob - ship.wy;
+                    if (dx * dx + dy * dy <= r2) {
+                        const prev = collectedByEmoji.get(c.emoji) || 0;
+                        collectedByEmoji.set(c.emoji, prev + 1);
+                        COLLECTIBLES.splice(i, 1);
+                        updateScoreHud();
+                    }
+                }
+                replenishCollectibles();
+            }
+
+            function wrapWorldThings(list) {
+                const margin = 3400;
+                for (const o of list) {
+                    const dx = o.x - ship.wx;
+                    const dy = o.y - ship.wy;
+                    if (dx * dx + dy * dy > margin * margin) {
+                        const ang = Math.random() * Math.PI * 2;
+                        const dist = randRange(2000, 2700);
+                        o.x = ship.wx + Math.cos(ang) * dist;
+                        o.y = ship.wy + Math.sin(ang) * dist;
+                    }
+                }
+            }
+
+            function wrapStars() {
+                wrapWorldThings(stars);
+            }
+
+            function clampCollectiblesNearShip() {
+                const { maxR } = collectibleRingRadiiPx();
+                const maxR2 = maxR * maxR;
+                for (const c of COLLECTIBLES) {
+                    const dx = c.x - ship.wx;
+                    const dy = c.y - ship.wy;
+                    if (dx * dx + dy * dy > maxR2) {
+                        placeCollectibleInRing(c);
+                    }
+                }
+            }
+
+            function resize() {
+                const wrap = canvas.parentElement;
+                const dpr = Math.min(window.devicePixelRatio || 1, 2);
+                const w = Math.floor(wrap.clientWidth * dpr);
+                const h = Math.floor(wrap.clientHeight * dpr);
+                if (canvas.width !== w || canvas.height !== h) {
+                    canvas.width = w;
+                    canvas.height = h;
+                }
+            }
+
+            function worldToScreen(wx, wy, parallax) {
+                const p = parallax == null ? 1 : parallax;
+                const cx = canvas.width / 2;
+                const cy = canvas.height / 2;
+                return {
+                    x: cx + (wx - ship.wx) * p,
+                    y: cy + (wy - ship.wy) * p
+                };
+            }
+
+            function clampJoystickClient(clientX, clientY) {
+                const rect = joystickEl.getBoundingClientRect();
+                const cx = rect.left + rect.width / 2;
+                const cy = rect.top + rect.height / 2;
+                const maxR = rect.width / 2 - 26;
+                let dx = clientX - cx;
+                let dy = clientY - cy;
+                const len = Math.hypot(dx, dy) || 1;
+                if (len > maxR) {
+                    dx = (dx / len) * maxR;
+                    dy = (dy / len) * maxR;
+                }
+                return { dx, dy, cx, cy, maxR };
+            }
+
+            function updateJoystickKnob(dx, dy) {
+                joystickKnob.style.left = `calc(50% + ${dx}px)`;
+                joystickKnob.style.top = `calc(50% + ${dy}px)`;
+            }
+
+            function bindJoystick() {
+                const setFrom = (clientX, clientY) => {
+                    const { dx, dy, maxR } = clampJoystickClient(clientX, clientY);
+                    joystickVec.x = maxR > 0 ? dx / maxR : 0;
+                    joystickVec.y = maxR > 0 ? dy / maxR : 0;
+                    updateJoystickKnob(dx, dy);
+                };
+                const end = (e) => {
+                    if (e && typeof e.pointerId === 'number' && joystickPointerId !== e.pointerId) {
+                        return;
+                    }
+                    if (joystickPointerId != null) {
+                        try {
+                            if (joystickEl.hasPointerCapture(joystickPointerId)) {
+                                joystickEl.releasePointerCapture(joystickPointerId);
+                            }
+                        } catch (_) {
+                            /* ignore */
+                        }
+                    }
+                    joystickPointerId = null;
+                    joystickActive = false;
+                    joystickVec.x = 0;
+                    joystickVec.y = 0;
+                    updateJoystickKnob(0, 0);
+                };
+
+                joystickEl.addEventListener(
+                    'pointerdown',
+                    (e) => {
+                        if (joystickPointerId != null) return;
+                        joystickPointerId = e.pointerId;
+                        try {
+                            joystickEl.setPointerCapture(e.pointerId);
+                        } catch (_) {
+                            joystickPointerId = null;
+                            return;
+                        }
+                        joystickActive = true;
+                        setFrom(e.clientX, e.clientY);
+                    },
+                    { passive: true }
+                );
+                joystickEl.addEventListener(
+                    'pointermove',
+                    (e) => {
+                        if (e.pointerId !== joystickPointerId) return;
+                        setFrom(e.clientX, e.clientY);
+                    },
+                    { passive: true }
+                );
+                joystickEl.addEventListener('pointerup', end);
+                joystickEl.addEventListener('pointercancel', end);
+                joystickEl.addEventListener('lostpointercapture', (e) => {
+                    if (e.pointerId !== joystickPointerId) return;
+                    joystickPointerId = null;
+                    joystickActive = false;
+                    joystickVec.x = 0;
+                    joystickVec.y = 0;
+                    updateJoystickKnob(0, 0);
+                });
+            }
+
+            function keyMap(e) {
+                if (e.code === 'ArrowUp') return 'ArrowUp';
+                if (e.code === 'ArrowDown') return 'ArrowDown';
+                if (e.code === 'ArrowLeft') return 'ArrowLeft';
+                if (e.code === 'ArrowRight') return 'ArrowRight';
+                if (e.code === 'Space') return ' ';
+                return null;
+            }
+
+            document.addEventListener('keydown', (e) => {
+                const k = keyMap(e);
+                if (k && keys.hasOwnProperty(k)) {
+                    keys[k] = true;
+                    e.preventDefault();
+                }
+            });
+            document.addEventListener('keyup', (e) => {
+                const k = keyMap(e);
+                if (k && keys.hasOwnProperty(k)) {
+                    keys[k] = false;
+                    e.preventDefault();
+                }
+            });
+
+            function step(dt) {
+                const m = PHYS.mass;
+                const I = PHYS.momentOfInertia;
+
+                let thrustInput = 0;
+                let torqueInput = 0;
+
+                if (keys.ArrowUp) thrustInput += 2;
+                if (keys.ArrowDown) thrustInput -= 1.35;
+                if (keys.ArrowLeft) torqueInput -= 2;
+                if (keys.ArrowRight) torqueInput += 2;
+
+                if (joystickActive) {
+                    torqueInput += joystickVec.x;
+                    thrustInput -= joystickVec.y;
+                }
+
+                const thrustClamped = Math.max(-0.5, Math.min(1, thrustInput));
+                const torqueClamped = Math.max(-1, Math.min(1, torqueInput));
+                lastThrustInput = thrustClamped;
+
+                const Fx = (PHYS.maxThrust * thrustClamped * Math.cos(ship.angle)) / m;
+                const Fy = (PHYS.maxThrust * thrustClamped * Math.sin(ship.angle)) / m;
+
+                ship.vx += Fx * dt;
+                ship.vy += Fy * dt;
+
+                const alpha = (PHYS.maxTorque * torqueClamped) / I;
+                ship.omega += alpha * dt;
+
+                if (keys[' ']) {
+                    const brake = 0.35 * dt;
+                    ship.vx *= Math.max(0, 1 - brake);
+                    ship.vy *= Math.max(0, 1 - brake);
+                    ship.omega *= Math.max(0, 1 - brake * 2);
+                }
+
+                const linD = Math.exp(-PHYS.linearDrag * dt);
+                ship.vx *= linD;
+                ship.vy *= linD;
+                const angD = Math.exp(-PHYS.angularDrag * dt);
+                ship.omega *= angD;
+
+                ship.wx += ship.vx * dt;
+                ship.wy += ship.vy * dt;
+                ship.angle += ship.omega * dt;
+
+                wrapStars();
+                clampCollectiblesNearShip();
+                recordTrail();
+            }
+
+            function recordTrail() {
+                if (!trailPrimed) {
+                    trailPrimed = true;
+                    trailLastWx = ship.wx;
+                    trailLastWy = ship.wy;
+                    trail.push({ wx: ship.wx, wy: ship.wy });
+                    return;
+                }
+                const dx = ship.wx - trailLastWx;
+                const dy = ship.wy - trailLastWy;
+                if (dx * dx + dy * dy >= TRAIL_MIN_DIST * TRAIL_MIN_DIST) {
+                    trail.push({ wx: ship.wx, wy: ship.wy });
+                    trailLastWx = ship.wx;
+                    trailLastWy = ship.wy;
+                    while (trail.length > TRAIL_MAX) trail.shift();
+                }
+            }
+
+            function drawShip() {
+                const cx = canvas.width / 2;
+                const cy = canvas.height / 2;
+                const scale = Math.min(canvas.width, canvas.height) / 520;
+                const L = 28 * scale;
+                const W = 12 * scale;
+
+                ctx.save();
+                ctx.translate(cx, cy);
+                ctx.rotate(ship.angle);
+
+                ctx.strokeStyle = '#94a3b8';
+                ctx.lineWidth = Math.max(1, 2 * scale);
+                ctx.fillStyle = 'rgba(30, 41, 59, 0.95)';
+                ctx.beginPath();
+                ctx.moveTo(L, 0);
+                ctx.lineTo(-L * 0.55, W);
+                ctx.lineTo(-L * 0.35, 0);
+                ctx.lineTo(-L * 0.55, -W);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+
+                if (lastThrustInput > 0.04) {
+                    ctx.fillStyle = 'rgba(251, 191, 36, 0.9)';
+                    ctx.beginPath();
+                    ctx.moveTo(-L * 0.55, 0);
+                    ctx.lineTo(-L * 1.15 - Math.random() * 6 * scale, (Math.random() - 0.5) * 4 * scale);
+                    ctx.lineTo(-L * 0.55, 0);
+                    ctx.fill();
+                }
+
+                ctx.restore();
+            }
+
+            function drawStars() {
+                for (const s of stars) {
+                    const p = worldToScreen(s.x, s.y, s.parallax);
+                    const pad = 12 + s.r * 8;
+                    if (p.x < -pad || p.y < -pad || p.x > canvas.width + pad || p.y > canvas.height + pad) {
+                        continue;
+                    }
+                    ctx.fillStyle = `rgba(226, 232, 240, ${s.a})`;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, s.r, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            function drawTrail() {
+                const n = trail.length;
+                if (n < 1) return;
+                const baseR = Math.max(1.2, Math.min(canvas.width, canvas.height) / 420);
+                for (let i = 0; i < n; i++) {
+                    const pt = trail[i];
+                    const p = worldToScreen(pt.wx, pt.wy, 1);
+                    if (p.x < -20 || p.y < -20 || p.x > canvas.width + 20 || p.y > canvas.height + 20) {
+                        continue;
+                    }
+                    const u = n <= 1 ? 1 : i / (n - 1);
+                    const alpha = 0.08 + u * 0.42;
+                    ctx.fillStyle = `rgba(147, 197, 253, ${alpha})`;
+                    ctx.strokeStyle = `rgba(148, 163, 184, ${alpha * 0.55})`;
+                    ctx.lineWidth = baseR * 0.35;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, baseR * (0.55 + u * 0.45), 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.stroke();
+                }
+            }
+
+            function collectibleScreenPos(c, nowSec, scale) {
+                const bob = Math.sin(nowSec * 1.3 + c.phase) * 6 * scale;
+                return worldToScreen(c.x, c.y + bob, 1);
+            }
+
+            function collectibleOnScreen(p, pad) {
+                return (
+                    p.x >= pad &&
+                    p.y >= pad &&
+                    p.x <= canvas.width - pad &&
+                    p.y <= canvas.height - pad
+                );
+            }
+
+            /** Ray from center in direction (ux,uy) to inner screen box; returns hit on border */
+            function screenRayToInnerBox(cx, cy, ux, uy, margin) {
+                const x0 = margin;
+                const x1 = canvas.width - margin;
+                const y0 = margin;
+                const y1 = canvas.height - margin;
+                let tHit = Infinity;
+                if (Math.abs(ux) > 1e-8) {
+                    const tx = ux > 0 ? (x1 - cx) / ux : (x0 - cx) / ux;
+                    if (tx > 0) tHit = Math.min(tHit, tx);
+                }
+                if (Math.abs(uy) > 1e-8) {
+                    const ty = uy > 0 ? (y1 - cy) / uy : (y0 - cy) / uy;
+                    if (ty > 0) tHit = Math.min(tHit, ty);
+                }
+                if (!Number.isFinite(tHit) || tHit <= 0) {
+                    return { x: cx, y: cy, t: 0 };
+                }
+                return { x: cx + ux * tHit, y: cy + uy * tHit, t: tHit };
+            }
+
+            function drawCollectibles(nowSec) {
+                const scale = Math.min(canvas.width, canvas.height) / 520;
+                const pad = COLLECTIBLE_ONSCREEN_PAD;
+                for (const c of COLLECTIBLES) {
+                    const p = collectibleScreenPos(c, nowSec, scale);
+                    if (!collectibleOnScreen(p, pad)) {
+                        continue;
+                    }
+                    ctx.save();
+                    ctx.translate(p.x, p.y);
+                    ctx.rotate(nowSec * c.spin * 0.15);
+                    ctx.font = `${c.size * scale}px "Segoe UI Emoji", "Apple Color Emoji", sans-serif`;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(c.emoji, 0, 0);
+                    ctx.restore();
+                }
+            }
+
+            function drawCollectibleOffScreenHints(nowSec) {
+                const scale = Math.min(canvas.width, canvas.height) / 520;
+                const pad = COLLECTIBLE_ONSCREEN_PAD;
+                const cx = canvas.width / 2;
+                const cy = canvas.height / 2;
+                const edgeMargin = Math.max(22, 14 * scale);
+                const backInset = Math.max(16, 12 * scale);
+                for (const c of COLLECTIBLES) {
+                    const p = collectibleScreenPos(c, nowSec, scale);
+                    if (collectibleOnScreen(p, pad)) {
+                        continue;
+                    }
+                    const shallowSize = Math.max(14, (12 + c.size * 0.35) * scale);
+                    const dx = p.x - cx;
+                    const dy = p.y - cy;
+                    const len = Math.hypot(dx, dy) || 1;
+                    const ux = dx / len;
+                    const uy = dy / len;
+                    const hit = screenRayToInnerBox(cx, cy, ux, uy, edgeMargin);
+                    const bx = hit.x - ux * backInset;
+                    const by = hit.y - uy * backInset;
+                    const ang = Math.atan2(uy, ux);
+
+                    ctx.save();
+                    ctx.translate(bx, by);
+                    ctx.rotate(ang);
+                    ctx.globalAlpha = 0.5;
+                    ctx.font = `${shallowSize}px "Segoe UI Emoji", "Apple Color Emoji", sans-serif`;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(c.emoji, -10 * scale, 0);
+                    ctx.globalAlpha = 0.85;
+                    const aw = Math.max(7, 9 * scale);
+                    const al = Math.max(12, 14 * scale);
+                    ctx.fillStyle = 'rgba(226, 232, 240, 0.95)';
+                    ctx.strokeStyle = 'rgba(15, 23, 42, 0.55)';
+                    ctx.lineWidth = Math.max(1, 1.2 * scale);
+                    ctx.beginPath();
+                    ctx.moveTo(al * 0.35, 0);
+                    ctx.lineTo(-al * 0.45, aw * 0.55);
+                    ctx.lineTo(-al * 0.45, -aw * 0.55);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.stroke();
+                    ctx.restore();
+                }
+            }
+
+            function frame(now) {
+                const dt = Math.min(0.05, (now - lastT) / 1000);
+                const nowSec = now / 1000;
+                lastT = now;
+                resize();
+                step(dt);
+                checkCollectibles(nowSec);
+
+                const speed = Math.hypot(ship.vx, ship.vy);
+                speedHud.textContent = speed.toFixed(1);
+                omegaHud.textContent = ship.omega.toFixed(2);
+
+                ctx.setTransform(1, 0, 0, 1, 0, 0);
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                const g = ctx.createRadialGradient(
+                    canvas.width * 0.5,
+                    canvas.height * 0.15,
+                    0,
+                    canvas.width * 0.5,
+                    canvas.height * 0.5,
+                    Math.max(canvas.width, canvas.height)
+                );
+                g.addColorStop(0, '#1a2236');
+                g.addColorStop(1, '#070a12');
+                ctx.fillStyle = g;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                drawStars();
+                drawTrail();
+                drawCollectibles(nowSec);
+                drawShip();
+                drawCollectibleOffScreenHints(nowSec);
+
+                requestAnimationFrame(frame);
+            }
+
+            initStars();
+            initCollectibles();
+            bindJoystick();
+            window.addEventListener('resize', resize);
+            resize();
+            requestAnimationFrame(frame);
+        })();
+    </script>
+    <script src="../../js/game-chrome.js"></script>
+    <script>
+        mountGameChrome({
+            mount: '#game-container',
+            prepend: true,
+            gamesUrl: '../../index.html',
+            gamesLabel: 'All games',
+            reloadLabel: 'Reload',
+            toolbarAriaLabel: 'Game menu'
+        });
+        document.documentElement.style.setProperty('--game-chrome-bg', 'rgba(15, 23, 42, 0.92)');
+        document.documentElement.style.setProperty('--game-chrome-text', '#e2e8f0');
+        document.documentElement.style.setProperty('--game-chrome-border', 'rgba(148, 163, 184, 0.35)');
+    </script>
+</body>
+</html>
