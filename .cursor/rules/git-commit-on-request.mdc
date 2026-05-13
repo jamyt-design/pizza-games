@@ -1,0 +1,35 @@
+---
+description: How to run git commit when the user asks to commit
+alwaysApply: true
+---
+
+# Git commits on user request
+
+When the user asks you to commit (stage and commit changes, or similar), follow **all** of this.
+
+## One subject line only
+
+- Run: `git commit -m "<subject>"` with **exactly one** `-m` argument.
+- The entire commit message is that single line: **no second paragraph**, no blank line then more text, no `git commit -m "subject" -m "body"`.
+
+## No trailer info (hard requirement)
+
+**Never** add Git trailers or anything that looks like them—not in the message, not via flags, not “to be helpful”.
+
+Forbidden in the commit message and forbidden as flags:
+
+- No `Signed-off-by:` / no `git commit -s` / no `--signoff`
+- No `Co-authored-by:` / no `Co-authored-by` lines for Cursor or any model
+- No `Reviewed-by:`, `Acked-by:`, `Tested-by:`, `Helped-by:`
+- No `Fixes:`, `Closes:`, `Related:` footers unless the user **explicitly** asks for that exact trailer
+- No `git commit --trailer=...` for any key unless the user explicitly asks for that trailer
+
+Do not suggest or paste a multi-line commit template that includes trailer blocks.
+
+## Non-interactive
+
+- Do not open `EDITOR` / `GIT_EDITOR` for the message; the one `-m` line is the full message.
+
+## Staging
+
+If nothing is staged, stage only paths that belong to the change the user asked for (or ask which paths to include if unclear).

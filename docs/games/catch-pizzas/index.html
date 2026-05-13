@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ловец Пиццы 🍕</title>
+    <style>
+        :root {
+            --frame-pad-x: 16px;
+            --frame-pad-y: 16px;
+            --frame-hud-gap: 88px; /* HUD + breathing room above canvas */
+        }
+        html {
+            box-sizing: border-box;
+        }
+        *, *::before, *::after {
+            box-sizing: inherit;
+        }
+        body {
+            margin: 0;
+            padding: max(var(--frame-pad-y), env(safe-area-inset-top, 0px))
+                     max(var(--frame-pad-x), env(safe-area-inset-right, 0px))
+                     max(var(--frame-pad-y), env(safe-area-inset-bottom, 0px))
+                     max(var(--frame-pad-x), env(safe-area-inset-left, 0px));
+            overflow-x: hidden;
+            overflow-y: auto;
+            background-color: #87CEEB; /* Цвет неба */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100dvh;
+            min-height: 100svh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        #game-container {
+            position: relative;
+            width: 100%;
+            max-width: min(500px, 100%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        /* Stacking: board 0 -> canvas 1 -> player 2 -> HUD 3 */
+        .canvas-stack {
+            position: relative;
+            z-index: 0;
+            width: min(
+                500px,
+                100%,
+                calc((min(100dvh, 100svh) - var(--frame-hud-gap) - 2 * var(--frame-pad-y)) * 500 / 700)
+            );
+            aspect-ratio: 500 / 700;
+            max-width: 100%;
+        }
+        canvas {
+            background-color: #f0f8ff;
+            border: 4px solid #333;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            display: block;
+            position: relative;
+            z-index: 1;
+            width: 100%;
+            height: 100%;
+            box-sizing: border-box;
+            touch-action: none;
+        }
+        #player-character {
+            position: absolute;
+            z-index: 2;
+            pointer-events: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 120px;
+            line-height: 1;
+            /* align with canvas coordinate system (inside the border) */
+            margin: 0;
+            box-sizing: border-box;
+        }
+        #ui {
+            position: absolute;
+            z-index: 3;
+            top: 15px;
+            left: 0;
+            right: 0;
+            width: 100%;
+            display: flex;
+            justify-content: space-around;
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+            pointer-events: none;
+            text-shadow: 1px 1px 2px white;
+        }
+        /* Match game-chrome width to canvas stack */
+        #game-container > .game-chrome--spread {
+            width: min(
+                500px,
+                100%,
+                calc((min(100dvh, 100svh) - var(--frame-hud-gap) - 2 * var(--frame-pad-y)) * 500 / 700)
+            );
+        }
+    </style>
+    <link rel="stylesheet" href="../../css/game-chrome.css">
+</head>
+<body>
+
+    <div id="game-container">
+        <div class="canvas-stack">
+            <div id="ui">
+                <div>Счет: <span id="score">0</span></div>
+                <div>Жизни: <span id="lives">3</span></div>
+            </div>
+            <canvas id="gameCanvas" width="500" height="700"></canvas>
+            <div id="player-character" aria-hidden="true">🧑‍🍳</div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreElement = document.getElementById('score');
+        const livesElement = document.getElementById('lives');
+        const playerCharacterEl = document.getElementById('player-character');
+        const canvasBorder = 4; /* matches canvas border width in CSS */
+
+        let score = 0;
+        let lives = 3;
+        let isGameOver = false;
+        let frameCount = 0;
+        let pizzaSpawnRate = 90;
+
+        const player = {
+            x: canvas.width / 2 - 35,
+            y: canvas.height - 90,
+            width: 130,
+            height: 130,
+            speed: 8,
+            dx: 0
+        };
+
+        const pizzas = [];
+
+        function createPizza() {
+            const size = 80;
+            const x = Math.random() * (canvas.width - size);
+            const speed = 3 + Math.random() * 4;
+            pizzas.push({ x: x, y: -size, size: size, speed: speed });
+        }
+
+        function canvasDisplayScale() {
+            const rect = canvas.getBoundingClientRect();
+            return {
+                sx: rect.width / canvas.width,
+                sy: rect.height / canvas.height
+            };
+        }
+
+        function clientXToCanvasX(clientX) {
+            const rect = canvas.getBoundingClientRect();
+            return ((clientX - rect.left) / rect.width) * canvas.width;
+        }
+
+        function syncPlayerCharacterDom() {
+            const { sx, sy } = canvasDisplayScale();
+            playerCharacterEl.style.left = `${(canvasBorder + player.x) * sx}px`;
+            playerCharacterEl.style.top = `${(canvasBorder + player.y) * sy}px`;
+            playerCharacterEl.style.width = `${player.width * sx}px`;
+            playerCharacterEl.style.height = `${player.height * sy}px`;
+            playerCharacterEl.style.fontSize = `${Math.round(120 * Math.min(sx, sy))}px`;
+            playerCharacterEl.style.visibility = isGameOver ? 'hidden' : 'visible';
+        }
+
+        function drawPizzas() {
+            ctx.font = "70px Arial";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            pizzas.forEach((pizza) => {
+                ctx.fillText("🍕", pizza.x + pizza.size / 2, pizza.y + pizza.size / 2);
+            });
+        }
+
+        function update() {
+            if (isGameOver) return;
+
+            player.x += player.dx;
+
+            if (player.x < 0) player.x = 0;
+            if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
+
+            frameCount++;
+            if (frameCount % pizzaSpawnRate === 0) {
+                createPizza();
+                if (pizzaSpawnRate > 20) pizzaSpawnRate -= 1;
+            }
+
+            for (let i = pizzas.length - 1; i >= 0; i--) {
+                const p = pizzas[i];
+                p.y += p.speed;
+
+                if (
+                    p.x < player.x + player.width - 15 &&
+                    p.x + p.size > player.x + 15 &&
+                    p.y < player.y + player.height &&
+                    p.y + p.size > player.y + 20
+                ) {
+                    score += 10;
+                    scoreElement.innerText = score;
+                    pizzas.splice(i, 1);
+                    continue;
+                }
+
+                if (p.y > canvas.height) {
+                    lives--;
+                    livesElement.innerText = lives;
+                    pizzas.splice(i, 1);
+
+                    if (lives <= 0) {
+                        isGameOver = true;
+                        pizzaSpawnRate = 90;
+                    }
+                }
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawPizzas();
+            syncPlayerCharacterDom();
+
+            if (isGameOver) {
+                ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                ctx.fillStyle = "white";
+                ctx.textAlign = "center";
+
+                ctx.font = "bold 40px Arial";
+                ctx.fillText("ИГРА ОКОНЧЕНА", canvas.width / 2, canvas.height / 2 - 20);
+
+                ctx.font = "20px Arial";
+                ctx.fillText(`Ваш итоговый счет: ${score}`, canvas.width / 2, canvas.height / 2 + 30);
+
+                ctx.font = "16px Arial";
+                ctx.fillText("Кликните по экрану, чтобы начать заново", canvas.width / 2, canvas.height / 2 + 80);
+            }
+        }
+
+        function loop() {
+            update();
+            draw();
+            if (!isGameOver) {
+                requestAnimationFrame(loop);
+            }
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') player.dx = -player.speed;
+            if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') player.dx = player.speed;
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (
+                e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A' ||
+                e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D'
+            ) {
+                player.dx = 0;
+            }
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            const mouseX = clientXToCanvasX(e.clientX);
+            player.x = mouseX - player.width / 2;
+        });
+
+        canvas.addEventListener('touchmove', (e) => {
+            const touchX = clientXToCanvasX(e.touches[0].clientX);
+            player.x = touchX - player.width / 2;
+            e.preventDefault();
+        }, { passive: false });
+
+        canvas.addEventListener('click', () => {
+            if (isGameOver) {
+                score = 0;
+                lives = 3;
+                pizzas.length = 0;
+                pizzaSpawnRate = 90;
+                isGameOver = false;
+                scoreElement.innerText = score;
+                livesElement.innerText = lives;
+                loop();
+            }
+        });
+
+        window.addEventListener('resize', syncPlayerCharacterDom);
+        loop();
+    </script>
+    <script src="../../js/game-chrome.js"></script>
+    <script>
+        mountGameChrome({
+            mount: '#game-container',
+            prepend: true,
+            gamesUrl: '../../index.html',
+            gamesLabel: 'Все игры',
+            reloadLabel: 'Обновить',
+            toolbarAriaLabel: 'Меню игры'
+        });
+    </script>
+</body>
+</html>

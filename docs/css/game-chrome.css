@@ -1,0 +1,87 @@
+/**
+ * Reusable in-game chrome: link to games index + reload.
+ * Override variables on .game-chrome or a parent to match each game's palette.
+ *
+ * Layouts:
+ * - .game-chrome--spread — full-width row, games left / reload right (align with canvas via parent width)
+ * - .game-chrome--viewport — fixed top-right corner of the viewport (compact)
+ */
+.game-chrome {
+    --game-chrome-bg: rgba(255, 255, 255, 0.94);
+    --game-chrome-border: rgba(51, 51, 51, 0.25);
+    --game-chrome-text: #1f2937;
+    --game-chrome-accent: #ea580c;
+    --game-chrome-accent-hover: #c2410c;
+    --game-chrome-shadow: 0 6px 20px rgba(15, 23, 42, 0.12);
+    --game-chrome-radius: 12px;
+    --game-chrome-gap: 8px;
+    --game-chrome-pad: 8px 12px;
+    --game-chrome-font: inherit;
+    --game-chrome-z: 1000;
+
+    display: flex;
+    align-items: center;
+    font-family: var(--game-chrome-font);
+    font-size: 14px;
+    line-height: 1.2;
+    pointer-events: auto;
+    flex-shrink: 0;
+    box-sizing: border-box;
+}
+
+/* Default: align with game column — games left, reload right */
+.game-chrome--spread {
+    position: relative;
+    z-index: var(--game-chrome-z);
+    width: 100%;
+    flex-wrap: nowrap;
+    justify-content: space-between;
+    gap: var(--game-chrome-gap);
+    margin-bottom: var(--game-chrome-row-gap, 10px);
+}
+
+/* Optional: pin to viewport corner (legacy / overlay games) */
+.game-chrome--viewport {
+    position: fixed;
+    z-index: var(--game-chrome-z);
+    top: max(12px, env(safe-area-inset-top, 0px));
+    right: max(12px, env(safe-area-inset-right, 0px));
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    max-width: calc(100vw - 24px);
+}
+
+.game-chrome__link,
+.game-chrome__reload {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 40px;
+    padding: var(--game-chrome-pad);
+    border-radius: var(--game-chrome-radius);
+    border: 1px solid var(--game-chrome-border);
+    background: var(--game-chrome-bg);
+    color: var(--game-chrome-text);
+    box-shadow: var(--game-chrome-shadow);
+    text-decoration: none;
+    font-weight: 600;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.game-chrome__link:hover,
+.game-chrome__link:focus-visible,
+.game-chrome__reload:hover,
+.game-chrome__reload:focus-visible {
+    background: var(--game-chrome-accent);
+    color: #fff;
+    border-color: var(--game-chrome-accent);
+    outline: none;
+}
+
+.game-chrome__reload:active,
+.game-chrome__link:active {
+    background: var(--game-chrome-accent-hover);
+    border-color: var(--game-chrome-accent-hover);
+}
