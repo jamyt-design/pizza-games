@@ -164,9 +164,8 @@
     <div id="game-container">
         <div class="canvas-wrap">
             <canvas id="gameCanvas" aria-label="Space explorer playfield"></canvas>
-            <div id="hud">
-                <span>Speed: <span id="speedHud">0</span> · Heading rate: <span id="omegaHud">0</span></span>
-                <span class="hud-meta">Newtonian flight (F = ma, τ = Iα)</span>
+            <div id="hud" style="text-align:center;">
+                <span>Speed: <span id="speedHud" style="vertical-align:center;color:lightgreen; font-weight: 700; font-size: 2em;"></span> · Heading rate: <span id="omegaHud">0</span></span>
                 <div id="scoreHud" aria-live="polite" aria-label="Collected items"></div>
             </div>
             <p id="hint">↑ forward · ← → turn · Space: brake · Phone: circle stick</p>
@@ -261,10 +260,10 @@
             const TRAIL_MAX_AGE_MS = 5000;
             /** Failsafe cap if age pruning ever lags */
             const TRAIL_MAX_POINTS = 50;
-            const TRAIL_MIN_DIST = 10;
+            const TRAIL_MIN_DIST = 0.1;
             /** Extra world px between dots per unit linear speed (rarer trail when moving fast). */
-            const TRAIL_DIST_PER_SPEED = 0.04;
-            const TRAIL_MAX_DIST = 2000;
+            const TRAIL_DIST_PER_SPEED = 0.1;
+            const TRAIL_MAX_DIST = 20000;
             let trailLastWx = 0;
             let trailLastWy = 0;
             let trailPrimed = false;
@@ -533,7 +532,7 @@
                 let torqueInput = 0;
 
                 if (keys.ArrowUp) thrustInput += 10;
-                if (keys.ArrowDown) thrustInput -= 20;
+                if (keys.ArrowDown) thrustInput -= 10;
                 if (keys.ArrowLeft) torqueInput -= 2;
                 if (keys.ArrowRight) torqueInput += 2;
 
@@ -597,7 +596,7 @@
                     TRAIL_MAX_DIST,
                     TRAIL_MIN_DIST + speed * TRAIL_DIST_PER_SPEED
                 );
-                const minDSq = minD * minD;
+                const minDSq = minD ; //* minD;
                 let sx = trailLastWx;
                 let sy = trailLastWy;
                 const ex = ship.wx;
