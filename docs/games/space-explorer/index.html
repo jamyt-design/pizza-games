@@ -120,7 +120,7 @@
         }
         .joystick {
             position: absolute;
-            left: max(16px, env(safe-area-inset-left, 0px));
+            right: max(16px, env(safe-area-inset-right, 0px));
             bottom: max(16px, env(safe-area-inset-bottom, 0px));
             width: 120px;
             height: 120px;
@@ -537,8 +537,8 @@
                 if (keys.ArrowRight) torqueInput += 2;
 
                 if (joystickActive) {
-                    torqueInput += joystickVec.x;
-                    thrustInput -= joystickVec.y;
+                    torqueInput += joystickVec.x*2;
+                    thrustInput -= joystickVec.y*10;
                 }
 
                 const thrustClamped = Math.max(-0.5, Math.max(1, thrustInput));
