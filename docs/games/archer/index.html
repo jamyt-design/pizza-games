@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Archer - Pizza Games</title>
+    <style>
+        :root {
+            --frame-pad: max(12px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px))
+                max(12px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
+        }
+        html {
+            box-sizing: border-box;
+            height: 100%;
+        }
+        *, *::before, *::after {
+            box-sizing: inherit;
+        }
+        body {
+            margin: 0;
+            padding: 0;
+            min-height: 100%;
+            min-height: 100dvh;
+            background: #0a0f0a;
+            color: #e2f0e2;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            overflow: hidden;
+        }
+        #game-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .canvas-wrap {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            margin: 0;
+        }
+        #gameCanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            touch-action: none;
+            background: #050805;
+            cursor: crosshair;
+        }
+        #hud {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+        }
+        .score-box {
+            font-size: 24px;
+            font-weight: bold;
+            color: #4ade80;
+        }
+        #feedback {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 80px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s ease, transform 0.5s ease;
+        }
+        #feedback.show {
+            opacity: 1;
+            transform: translate(-50%, -60%);
+        }
+        #instructions {
+            position: absolute;
+            bottom: 20px;
+            left: 0;
+            right: 0;
+            text-align: center;
+            color: #94a3b8;
+            font-size: 14px;
+            pointer-events: none;
+        }
+        /* Joystick Styles */
+        .joystick {
+            position: absolute;
+            left: 50%;
+            bottom: max(16px, env(safe-area-inset-bottom, 0px));
+            width: 120px;
+            height: 120px;
+            z-index: 3;
+            touch-action: none;
+            -webkit-tap-highlight-color: transparent;
+            display: none; /* Only show on mobile */
+            transform: translateX(-50%);
+        }
+        .joystick__ring {
+            position: absolute;
+            inset: 0;
+            border-radius: 50%;
+            background: rgba(15, 23, 42, 0.55);
+            border: 2px solid rgba(148, 163, 184, 0.35);
+            box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.35);
+        }
+        .joystick__knob {
+            position: absolute;
+            width: 44px;
+            height: 44px;
+            margin: -22px 0 0 -22px;
+            left: 50%;
+            top: 50%;
+            border-radius: 50%;
+            background: radial-gradient(circle at 30% 30%, #64748b, #334155);
+            border: 2px solid rgba(226, 232, 240, 0.35);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+            pointer-events: none;
+        }
+        @media (max-width: 1024px) {
+            .joystick {
+                display: block;
+            }
+            #instructions {
+                bottom: 170px;
+            }
+        }
+    </style>
+    <link rel="stylesheet" href="../../css/game-chrome.css">
+</head>
+<body>
+    <div id="game-container">
+        <div class="canvas-wrap">
+            <canvas id="gameCanvas" width="1600" height="900" aria-label="Archery Range"></canvas>
+            <div id="hud">
+                <div class="score-box">Score: <span id="scoreVal">0</span></div>
+                <div id="windBox" style="color: #94a3b8; font-size: 18px; font-weight: bold;">Wind: <span id="windVal">Calm</span></div>
+                <div id="trophyBox" style="font-size: 24px; margin-top: 5px;"></div>
+            </div>
+            <div id="feedback" role="status" aria-live="polite"></div>
+            <div id="instructions">Move to aim, Click/Tap to shoot</div>
+            
+            <div class="joystick" id="joystick">
+                <div class="joystick__ring"></div>
+                <div class="joystick__knob" id="joystickKnob"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        (function() {
+            const canvas = document.getElementById('gameCanvas');
+            const ctx = canvas.getContext('2d');
+            const scoreEl = document.getElementById('scoreVal');
+            const feedbackEl = document.getElementById('feedback');
+            const windEl = document.getElementById('windVal');
+            const trophyBox = document.getElementById('trophyBox');
+            const joystickEl = document.getElementById('joystick');
+            const joystickKnob = document.getElementById('joystickKnob');
+
+            let W, H;
+            let score = 0;
+            let wind = 0; // Horizontal wind force
+            let trophyCount = 0;
+            let gameState = 'aiming'; // 'aiming', 'flying', 'result'
+            let arrow = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, active: false };
+            let stuckArrows = []; // Array to store hit arrows
+            let mouse = { x: 0, y: 0 };
+            
+            // Joystick logic
+            let joystickVec = { x: 0, y: 0 };
+            let joystickActive = false;
+            let joystickPointerId = null;
+
+            function clampJoystickClient(clientX, clientY) {
+                const rect = joystickEl.getBoundingClientRect();
+                const cx = rect.left + rect.width / 2;
+                const cy = rect.top + rect.height / 2;
+                const maxR = rect.width / 2 - 22;
+                let dx = clientX - cx;
+                let dy = clientY - cy;
+                const len = Math.hypot(dx, dy) || 1;
+                if (len > maxR) {
+                    dx = (dx / len) * maxR;
+                    dy = (dy / len) * maxR;
+                }
+                return { dx, dy, maxR };
+            }
+
+            function updateJoystickKnob(dx, dy) {
+                joystickKnob.style.left = `calc(50% + ${dx}px)`;
+                joystickKnob.style.top = `calc(50% + ${dy}px)`;
+            }
+
+            function bindJoystick() {
+                const setFrom = (clientX, clientY) => {
+                    const { dx, dy, maxR } = clampJoystickClient(clientX, clientY);
+                    joystickVec.x = maxR > 0 ? dx / maxR : 0;
+                    joystickVec.y = maxR > 0 ? dy / maxR : 0;
+                    updateJoystickKnob(dx, dy);
+                    
+                    // Move crosshair based on joystick offset
+                    mouse.x = W / 2 + joystickVec.x * (W * 0.4);
+                    mouse.y = H / 2 + joystickVec.y * (H * 0.4);
+                };
+                const end = (e) => {
+                    if (e && typeof e.pointerId === 'number' && joystickPointerId !== e.pointerId) {
+                        return;
+                    }
+                    if (joystickPointerId != null) {
+                        try {
+                            if (joystickEl.hasPointerCapture(joystickPointerId)) {
+                                joystickEl.releasePointerCapture(joystickPointerId);
+                            }
+                        } catch (_) {}
+                    }
+                    joystickPointerId = null;
+                    joystickActive = false;
+                    joystickVec.x = 0;
+                    joystickVec.y = 0;
+                    updateJoystickKnob(0, 0);
+                };
+
+                joystickEl.addEventListener('pointerdown', (e) => {
+                    if (joystickPointerId != null) return;
+                    joystickPointerId = e.pointerId;
+                    try {
+                        joystickEl.setPointerCapture(e.pointerId);
+                    } catch (_) {
+                        joystickPointerId = null;
+                        return;
+                    }
+                    joystickActive = true;
+                    setFrom(e.clientX, e.clientY);
+                }, { passive: true });
+
+                joystickEl.addEventListener('pointermove', (e) => {
+                    if (e.pointerId !== joystickPointerId) return;
+                    setFrom(e.clientX, e.clientY);
+                }, { passive: true });
+
+                joystickEl.addEventListener('pointerup', end);
+                joystickEl.addEventListener('pointercancel', end);
+            }
+
+            bindJoystick();
+
+            let TARGET_Z, TARGET_X, TARGET_Y, TREE_X;
+            let RAD_OUTER_MAX, RAD_OUTER_MIN, RAD_INNER_MAX, RAD_INNER_MIN, RAD_CENTER;
+
+            function resize() {
+                const dpr = window.devicePixelRatio || 1;
+                W = canvas.width = window.innerWidth;
+                H = canvas.height = window.innerHeight;
+                
+                // Determine base scaling
+                const isLandscape = W > H;
+                const base = Math.min(W, H);
+                const isMobile = W < 1024 || H < 1024;
+                
+                TARGET_Z = 1000;
+                TARGET_X = W / 2;
+                TARGET_Y = H * 0.45;
+                
+                // Base target size calculation
+                if (isLandscape && isMobile) {
+                    // Previous was 70%, now +40% = 98% of width (clamped)
+                    RAD_OUTER_MAX = W * 0.98; 
+                } else if (isMobile) {
+                    // Portrait mobile: was 50%, now +40% = 70% of base
+                    RAD_OUTER_MAX = base * 0.7;
+                } else {
+                    // Desktop/Large tablet
+                    RAD_OUTER_MAX = base * 0.5;
+                }
+                
+                // Safety clamp to ensure it fits vertically
+                const maxHeightRadius = (H * 0.85) / 0.5 / 2;
+                RAD_OUTER_MAX = Math.min(RAD_OUTER_MAX, maxHeightRadius);
+                
+                RAD_OUTER_MIN = RAD_OUTER_MAX * 0.6;
+                RAD_INNER_MAX = RAD_OUTER_MAX * 0.6;
+                RAD_INNER_MIN = RAD_OUTER_MAX * 0.2;
+                RAD_CENTER = RAD_OUTER_MAX * 0.2;
+
+                TREE_X = TARGET_X + RAD_OUTER_MAX * 0.6;
+
+                if (gameState === 'aiming') {
+                    mouse.x = W / 2;
+                    mouse.y = H / 2;
+                }
+            }
+
+            window.addEventListener('resize', resize);
+            resize();
+
+            function drawPineTree(x, y, scale) {
+                ctx.save();
+                ctx.translate(x, y);
+                ctx.scale(scale, scale);
+                
+                // Trunk
+                ctx.fillStyle = '#3e2723';
+                ctx.fillRect(-20, 0, 40, 400);
+                
+                // Needles
+                ctx.fillStyle = '#1b5e20';
+                for (let i = 0; i < 4; i++) {
+                    ctx.beginPath();
+                    ctx.moveTo(0, -100 - i * 80);
+                    ctx.lineTo(150 - i * 20, 100 - i * 40);
+                    ctx.lineTo(-150 + i * 20, 100 - i * 40);
+                    ctx.closePath();
+                    ctx.fill();
+                }
+                ctx.restore();
+            }
+
+            function drawTarget(x, y, scale) {
+                ctx.save();
+                ctx.translate(x, y);
+                ctx.scale(scale, scale);
+
+                // Target Stand/Rope
+                ctx.strokeStyle = '#5d4037';
+                ctx.lineWidth = 5;
+                ctx.beginPath();
+                ctx.moveTo(0, -RAD_OUTER_MAX - 20);
+                ctx.lineTo(RAD_OUTER_MAX * 0.5, -RAD_OUTER_MAX * 1.5);
+                ctx.stroke();
+
+                // Outer Ring
+                ctx.lineWidth = 2;
+                ctx.font = `bold ${Math.max(12, RAD_OUTER_MAX * 0.15)}px Arial`;
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+
+                for (let i = 1; i <= 12; i++) {
+                    const startAngle = (i - 1) * (Math.PI * 2 / 12) - Math.PI / 2;
+                    const endAngle = i * (Math.PI * 2 / 12) - Math.PI / 2;
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(0, 0);
+                    ctx.arc(0, 0, RAD_OUTER_MAX, startAngle, endAngle);
+                    ctx.closePath();
+                    ctx.fillStyle = i % 2 === 0 ? '#fefefe' : '#e53935';
+                    ctx.fill();
+                    ctx.stroke();
+
+                    // Numbers 1-12
+                    const textAngle = startAngle + (endAngle - startAngle) / 2;
+                    const tx = Math.cos(textAngle) * (RAD_OUTER_MAX + RAD_OUTER_MIN) / 2;
+                    const ty = Math.sin(textAngle) * (RAD_OUTER_MAX + RAD_OUTER_MIN) / 2;
+                    ctx.fillStyle = '#212121';
+                    ctx.fillText(i, tx, ty);
+                }
+
+                // Inner Ring
+                for (let i = 1; i <= 4; i++) {
+                    const startAngle = (i - 1) * (Math.PI * 2 / 4) - Math.PI / 2;
+                    const endAngle = i * (Math.PI * 2 / 4) - Math.PI / 2;
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(0, 0);
+                    ctx.arc(0, 0, RAD_INNER_MAX, startAngle, endAngle);
+                    ctx.closePath();
+                    ctx.fillStyle = i % 2 === 0 ? '#3f51b5' : '#4ade80';
+                    ctx.fill();
+                    ctx.stroke();
+
+                    // Numbers 13-16
+                    const textAngle = startAngle + (endAngle - startAngle) / 2;
+                    const tx = Math.cos(textAngle) * (RAD_INNER_MAX + RAD_INNER_MIN) / 2;
+                    const ty = Math.sin(textAngle) * (RAD_INNER_MAX + RAD_INNER_MIN) / 2;
+                    ctx.fillStyle = '#212121';
+                    ctx.fillText(12 + i, tx, ty);
+                }
+
+                // Center (Infinity)
+                ctx.beginPath();
+                ctx.arc(0, 0, RAD_CENTER, 0, Math.PI * 2);
+                ctx.fillStyle = '#000';
+                ctx.fill();
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 3;
+                ctx.stroke();
+                
+                ctx.fillStyle = '#fff';
+                ctx.font = `bold ${RAD_CENTER * 1.2}px Arial`;
+                ctx.fillText("∞", 0, 0);
+
+                ctx.restore();
+            }
+
+            function drawArrow(x, y, z, active, isStuck) {
+                const scale = 1 - (z / (TARGET_Z * 1.2));
+                if (scale <= 0) return;
+
+                ctx.save();
+                ctx.translate(x, y);
+                
+                // Interpolate size multiplier during flight: 1x at start, 5x at target
+                let sizeMultiplier;
+                if (isStuck) {
+                    sizeMultiplier = 5;
+                } else {
+                    sizeMultiplier = 1 + (z / TARGET_Z) * 4;
+                }
+                
+                const baseScale = (Math.min(W, H) / 800) * sizeMultiplier;
+                ctx.scale(scale * baseScale, scale * baseScale);
+
+                // Calculate 3D Tilt Effect: Tilt away from center based on position
+                const dx = x - TARGET_X;
+                const dy = y - TARGET_Y;
+                const distFromCenter = Math.hypot(dx, dy);
+                const tiltFactor = distFromCenter / (RAD_OUTER_MAX * 0.5); // Normalize tilt
+                const angle = Math.atan2(dy, dx);
+
+                if (isStuck) {
+                    ctx.rotate(angle + Math.PI / 2); // Align with radial vector
+                    ctx.rotate(tiltFactor * 0.4); // Tilt outwards
+                    ctx.translate(0, -10); // Offset tip slightly into target
+                } else {
+                    // Interpolate tilt during flight (0 at start, full at target)
+                    const flightTiltProgress = z / TARGET_Z;
+                    ctx.rotate(angle + Math.PI / 2);
+                    ctx.rotate(tiltFactor * 0.4 * flightTiltProgress);
+                }
+
+                // Shaft
+                ctx.strokeStyle = '#8d6e63';
+                ctx.lineWidth = 4;
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(0, 100);
+                ctx.stroke();
+
+                // Fletching
+                ctx.fillStyle = '#f44336';
+                ctx.beginPath();
+                ctx.moveTo(-10, 80);
+                ctx.lineTo(0, 70);
+                ctx.lineTo(10, 80);
+                ctx.lineTo(0, 100);
+                ctx.closePath();
+                ctx.fill();
+
+                // Tip (when close or flying)
+                if (z > TARGET_Z * 0.8 || !isStuck) {
+                    ctx.fillStyle = '#9e9e9e';
+                    ctx.beginPath();
+                    ctx.moveTo(-5, 0);
+                    ctx.lineTo(5, 0);
+                    ctx.lineTo(0, -10);
+                    ctx.closePath();
+                    ctx.fill();
+                }
+
+                ctx.restore();
+            }
+
+            function showFeedback(text, color, isBig) {
+                feedbackEl.textContent = text;
+                feedbackEl.style.color = color || '#fff';
+                feedbackEl.style.fontSize = isBig ? '160px' : '80px';
+                feedbackEl.classList.add('show');
+                setTimeout(() => {
+                    feedbackEl.classList.remove('show');
+                }, 1500);
+            }
+
+            function updateWind() {
+                // Wind range from -1.5 to 1.5
+                wind = (Math.random() - 0.5) * 3;
+                if (Math.abs(wind) < 0.2) {
+                    windEl.textContent = "Calm";
+                    windEl.style.color = "#94a3b8";
+                } else {
+                    const dir = wind > 0 ? "→" : "←";
+                    const strength = Math.abs(wind).toFixed(1);
+                    windEl.textContent = `${dir} ${strength}`;
+                    windEl.style.color = "#4ade80";
+                }
+            }
+
+            // Initial wind
+            updateWind();
+
+            function shoot() {
+                if (gameState !== 'aiming') return;
+                
+                gameState = 'flying';
+                arrow.active = true;
+                arrow.x = W / 2;
+                arrow.y = H - 50;
+                arrow.z = 0;
+                
+                const dx = (mouse.x - W/2);
+                const dy = (mouse.y - (H - 50));
+                
+                arrow.vx = dx / 50;
+                arrow.vy = dy / 50;
+                arrow.vz = 20;
+            }
+
+            function resetGame(success) {
+                if (!success) {
+                    score = 0;
+                    scoreEl.textContent = score;
+                    showFeedback('👎', '#f44336');
+                    stuckArrows = []; // Clear arrows on miss
+                    trophyCount = 0;
+                    trophyBox.textContent = "";
+                }
+                updateWind(); // Change wind after each shot
+                setTimeout(() => {
+                    gameState = 'aiming';
+                    arrow.active = false;
+                }, 800); // Faster reset for better flow
+            }
+
+            function checkHit() {
+                const dist = Math.hypot(arrow.x - TARGET_X, arrow.y - TARGET_Y);
+                const perspectiveScale = 0.5;
+                const actualDist = dist / perspectiveScale;
+
+                if (actualDist < RAD_CENTER) {
+                    showFeedback('🏆', '#4ade80', true);
+                    score += 100;
+                    scoreEl.textContent = "∞"; // Always only infinity
+                    trophyCount++;
+                    trophyBox.textContent = "🏆".repeat(trophyCount);
+                    stuckArrows.push({ x: arrow.x, y: arrow.y, z: arrow.z });
+                    resetGame(true);
+                } else if (actualDist < RAD_INNER_MAX) {
+                    const angle = Math.atan2(arrow.y - TARGET_Y, arrow.x - TARGET_X) + Math.PI / 2;
+                    let sector = Math.floor(((angle + Math.PI * 2) % (Math.PI * 2)) / (Math.PI * 2 / 4)) + 1;
+                    const points = 12 + sector;
+                    score += points;
+                    if (scoreEl.textContent !== "∞") scoreEl.textContent = score;
+                    showFeedback('+' + points, '#4ade80');
+                    stuckArrows.push({ x: arrow.x, y: arrow.y, z: arrow.z });
+                    resetGame(true);
+                } else if (actualDist < RAD_OUTER_MAX) {
+                    const angle = Math.atan2(arrow.y - TARGET_Y, arrow.x - TARGET_X) + Math.PI / 2;
+                    let sector = Math.floor(((angle + Math.PI * 2) % (Math.PI * 2)) / (Math.PI * 2 / 12)) + 1;
+                    score += sector;
+                    if (scoreEl.textContent !== "∞") scoreEl.textContent = score;
+                    showFeedback('+' + sector, '#fefefe');
+                    stuckArrows.push({ x: arrow.x, y: arrow.y, z: arrow.z });
+                    resetGame(true);
+                } else {
+                    resetGame(false);
+                }
+            }
+
+            function update() {
+                if (gameState === 'flying') {
+                    arrow.x += arrow.vx + (wind * (arrow.z / TARGET_Z)); // Wind affects x, stronger as it goes deeper
+                    arrow.y += arrow.vy;
+                    arrow.z += arrow.vz;
+                    arrow.vy += 0.05;
+
+                    if (arrow.z >= TARGET_Z) {
+                        gameState = 'result';
+                        checkHit();
+                    }
+                }
+            }
+
+            function draw() {
+                ctx.clearRect(0, 0, W, H);
+
+                // Sky
+                const skyGrd = ctx.createLinearGradient(0, 0, 0, H);
+                skyGrd.addColorStop(0, '#0d1a0d');
+                skyGrd.addColorStop(1, '#1b331b');
+                ctx.fillStyle = skyGrd;
+                ctx.fillRect(0, 0, W, H);
+
+                // Forest Floor
+                ctx.fillStyle = '#0a0a05';
+                ctx.beginPath();
+                ctx.moveTo(0, H * 0.7);
+                ctx.lineTo(W, H * 0.7);
+                ctx.lineTo(W, H);
+                ctx.lineTo(0, H);
+                ctx.closePath();
+                ctx.fill();
+
+                // Distant Trees
+                drawPineTree(W * 0.15, H * 0.35, 0.3 * (H/900));
+                drawPineTree(W * 0.85, H * 0.3, 0.4 * (H/900));
+
+                // Target Pine Tree
+                drawPineTree(TREE_X, H * 0.1, 0.8 * (H/900));
+
+                // The Target
+                drawTarget(TARGET_X, TARGET_Y, 0.5);
+
+                // Stuck Arrows
+                stuckArrows.forEach(sa => {
+                    drawArrow(sa.x, sa.y, sa.z, true, true);
+                });
+
+                // Bow Preview / Crosshair
+                if (gameState === 'aiming') {
+                    ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.arc(mouse.x, mouse.y, RAD_CENTER * 0.8, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.beginPath();
+                    ctx.moveTo(mouse.x - RAD_CENTER, mouse.y);
+                    ctx.lineTo(mouse.x + RAD_CENTER, mouse.y);
+                    ctx.moveTo(mouse.x, mouse.y - RAD_CENTER);
+                    ctx.lineTo(mouse.x, mouse.y + RAD_CENTER);
+                    ctx.stroke();
+                    
+                    drawArrow(W/2, H - 50, 0, true, false);
+                }
+
+                if (gameState === 'flying' || gameState === 'result') {
+                    drawArrow(arrow.x, arrow.y, arrow.z, true, false);
+                }
+
+                requestAnimationFrame(draw);
+            }
+
+            function handleMove(e) {
+                const rect = canvas.getBoundingClientRect();
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                mouse.x = clientX - rect.left;
+                mouse.y = clientY - rect.top;
+            }
+
+            canvas.addEventListener('mousemove', handleMove);
+            canvas.addEventListener('touchmove', (e) => {
+                e.preventDefault();
+                handleMove(e);
+            }, { passive: false });
+
+            canvas.addEventListener('click', shoot);
+            canvas.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                handleMove(e);
+                shoot();
+            }, { passive: false });
+
+            // Start loop
+            setInterval(update, 1000/60);
+            draw();
+        })();
+    </script>
+    <script src="../../js/game-chrome.js"></script>
+    <script>
+        mountGameChrome({
+            mount: '#game-container',
+            prepend: true,
+            gamesUrl: '../../index.html',
+            gamesLabel: 'All games',
+            reloadLabel: 'Reload',
+            toolbarAriaLabel: 'Game menu'
+        });
+        document.documentElement.style.setProperty('--game-chrome-bg', 'rgba(10, 20, 10, 0.92)');
+        document.documentElement.style.setProperty('--game-chrome-text', '#e2f0e2');
+        document.documentElement.style.setProperty('--game-chrome-border', 'rgba(148, 184, 148, 0.35)');
+    </script>
+</body>
+</html>

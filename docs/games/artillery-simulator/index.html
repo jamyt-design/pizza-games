@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Artillery Simulator</title>
+    <style>
+        :root {
+            --frame-pad: max(12px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px))
+                max(12px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
+        }
+        html {
+            box-sizing: border-box;
+            height: 100%;
+        }
+        *, *::before, *::after {
+            box-sizing: inherit;
+        }
+        body {
+            margin: 0;
+            padding: var(--frame-pad);
+            min-height: 100%;
+            min-height: 100dvh;
+            min-height: 100svh;
+            background: linear-gradient(180deg, #1e3a5f 0%, #0f172a 45%);
+            color: #e2e8f0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+        }
+        #game-container {
+            position: relative;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+            width: 100%;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        #game-container > .game-chrome--spread {
+            width: 100%;
+            flex-shrink: 0;
+        }
+        .canvas-wrap {
+            position: relative;
+            width: 100%;
+            flex: 1;
+            min-height: 220px;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid rgba(148, 163, 184, 0.3);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+            aspect-ratio: 800 / 450;
+            max-height: min(70vh, 520px);
+            margin: 0 auto;
+        }
+        #gameCanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            touch-action: manipulation;
+            background: #0b1220;
+            cursor: crosshair;
+        }
+        #panel {
+            margin-top: 12px;
+            padding: 14px;
+            border-radius: 12px;
+            background: rgba(15, 23, 42, 0.85);
+            border: 1px solid rgba(148, 163, 184, 0.25);
+            display: grid;
+            gap: 12px;
+        }
+        .hud-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            font-size: 14px;
+        }
+        .hud-row strong {
+            color: #fbbf24;
+        }
+        .controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px 16px;
+            align-items: end;
+        }
+        @media (max-width: 520px) {
+            .controls {
+                grid-template-columns: 1fr;
+            }
+        }
+        .control-block label {
+            display: block;
+            font-size: 12px;
+            color: #94a3b8;
+            margin-bottom: 4px;
+        }
+        .control-block input[type="range"] {
+            width: 100%;
+        }
+        .control-block .value {
+            font-variant-numeric: tabular-nums;
+            color: #cbd5e1;
+            font-size: 13px;
+            margin-top: 2px;
+        }
+        #fireBtn {
+            grid-column: 1 / -1;
+            padding: 12px 18px;
+            font-size: 16px;
+            font-weight: 700;
+            border: none;
+            border-radius: 10px;
+            background: linear-gradient(180deg, #ea580c, #c2410c);
+            color: #fff;
+            cursor: pointer;
+            transition: filter 0.15s ease, transform 0.1s ease;
+        }
+        #fireBtn:hover:not(:disabled) {
+            filter: brightness(1.08);
+        }
+        #fireBtn:active:not(:disabled) {
+            transform: scale(0.98);
+        }
+        #fireBtn:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
+        #message {
+            min-height: 1.4em;
+            font-size: 14px;
+            color: #a5b4fc;
+            text-align: center;
+        }
+        #message.gameover-win {
+            color: #4ade80;
+            font-weight: 700;
+        }
+        #message.gameover-lose {
+            color: #f87171;
+            font-weight: 700;
+        }
+    </style>
+    <link rel="stylesheet" href="../../css/game-chrome.css">
+</head>
+<body>
+    <div id="game-container">
+        <div class="canvas-wrap">
+            <canvas id="gameCanvas" width="800" height="450" aria-label="Artillery battlefield"></canvas>
+        </div>
+        <div id="panel">
+            <div class="hud-row">
+                <span>You: <strong id="hpYou">100</strong> HP</span>
+                <span>Wind: <strong id="windHud">0</strong></span>
+                <span>PC: <strong id="hpPc">100</strong> HP</span>
+            </div>
+            <div class="controls" id="controls">
+                <div class="control-block">
+                    <label for="angleRange">Angle (°)</label>
+                    <input type="range" id="angleRange" min="20" max="85" value="55" step="1">
+                    <div class="value" id="angleVal">55°</div>
+                </div>
+                <div class="control-block">
+                    <label for="powerRange">Power</label>
+                    <input type="range" id="powerRange" min="35" max="115" value="72" step="1">
+                    <div class="value" id="powerVal">72</div>
+                </div>
+                <button type="button" id="fireBtn">Fire</button>
+            </div>
+            <p id="message" role="status" aria-live="polite"></p>
+        </div>
+    </div>
+
+    <script>
+        (function () {
+            const LW = 800;
+            const LH = 450;
+            const canvas = document.getElementById('gameCanvas');
+            const ctx = canvas.getContext('2d');
+            const angleRange = document.getElementById('angleRange');
+            const powerRange = document.getElementById('powerRange');
+            const angleVal = document.getElementById('angleVal');
+            const powerVal = document.getElementById('powerVal');
+            const fireBtn = document.getElementById('fireBtn');
+            const windHud = document.getElementById('windHud');
+            const hpYouEl = document.getElementById('hpYou');
+            const hpPcEl = document.getElementById('hpPc');
+            const messageEl = document.getElementById('message');
+
+            const G = 0.22;
+            const MAX_HP = 100;
+            const DIRECT_DMG = 42;
+            const SPLASH_RADIUS = 48;
+            const SPLASH_DMG = 16;
+            const TANK_HIT_R = 26;
+
+            let terrain = [];
+            let wind = 0;
+            let hpYou = MAX_HP;
+            let hpPc = MAX_HP;
+            /** @type {'player'|'pc'|'flying'|'over'} */
+            let turn = 'player';
+            let projectile = null;
+            let explosions = [];
+
+            const playerTank = { x: 0, y: 0, facing: 1 };
+            const pcTank = { x: 0, y: 0, facing: -1 };
+
+            function terrainHeightAt(x) {
+                const xf = Math.max(0, Math.min(LW - 1, x));
+                const i0 = Math.floor(xf);
+                const i1 = Math.min(LW - 1, i0 + 1);
+                const t = xf - i0;
+                return terrain[i0] * (1 - t) + terrain[i1] * t;
+            }
+
+            function genTerrain() {
+                terrain = new Array(LW);
+                const base = LH * 0.74;
+                for (let x = 0; x < LW; x++) {
+                    const u = x / LW;
+                    const hillL = Math.exp(-Math.pow((u - 0.17) / 0.11, 2)) * 130;
+                    const hillR = Math.exp(-Math.pow((u - 0.83) / 0.11, 2)) * 130;
+                    const roll = Math.sin(u * Math.PI * 5 + 0.7) * 14 + Math.sin(u * 17) * 6;
+                    terrain[x] = base - hillL - hillR + roll;
+                }
+            }
+
+            function placeTanks() {
+                playerTank.x = Math.round(LW * 0.14);
+                pcTank.x = Math.round(LW * 0.86);
+                playerTank.y = terrainHeightAt(playerTank.x) - 8;
+                pcTank.y = terrainHeightAt(pcTank.x) - 8;
+            }
+
+            function newWind() {
+                wind = (Math.random() * 2 - 1) * 0.55;
+                windHud.textContent = wind > 0.02 ? '→ ' + wind.toFixed(2) : wind < -0.02 ? '← ' + Math.abs(wind).toFixed(2) : 'calm';
+            }
+
+            function resetMatch() {
+                genTerrain();
+                placeTanks();
+                newWind();
+                hpYou = MAX_HP;
+                hpPc = MAX_HP;
+                turn = 'player';
+                projectile = null;
+                explosions = [];
+                hpYouEl.textContent = String(hpYou);
+                hpPcEl.textContent = String(hpPc);
+                messageEl.textContent = 'Your turn — adjust angle and power, then Fire.';
+                messageEl.className = '';
+                fireBtn.disabled = false;
+                angleRange.disabled = false;
+                powerRange.disabled = false;
+            }
+
+            function syncSliders() {
+                angleVal.textContent = angleRange.value + '°';
+                powerVal.textContent = powerRange.value;
+            }
+
+            function damageAt(target, px, py) {
+                const dx = px - target.x;
+                const dy = py - target.y;
+                const d = Math.hypot(dx, dy);
+                if (d <= TANK_HIT_R) return DIRECT_DMG;
+                if (d <= SPLASH_RADIUS) return Math.round(SPLASH_DMG * (1 - d / SPLASH_RADIUS));
+                return 0;
+            }
+
+            /**
+             * @param {number} startX
+             * @param {number} startY
+             * @param {number} angleDeg
+             * @param {number} power
+             * @param {number} dir 1 = shoot right, -1 = shoot left
+             * @returns {{ hit: 'ground'|'you'|'pc'|'oob', x: number, y: number }}
+             */
+            function simulateShot(startX, startY, angleDeg, power, dir) {
+                const rad = (angleDeg * Math.PI) / 180;
+                let x = startX;
+                let y = startY;
+                let vx = dir * Math.cos(rad) * power;
+                let vy = -Math.sin(rad) * power;
+                const maxSteps = 8000;
+                for (let s = 0; s < maxSteps; s++) {
+                    x += vx + wind;
+                    y += vy;
+                    vy += G;
+                    if (x < 0 || x > LW || y > LH + 80) {
+                        return { hit: 'oob', x, y };
+                    }
+                    if (damageAt(playerTank, x, y) >= DIRECT_DMG) {
+                        return { hit: 'you', x, y };
+                    }
+                    if (damageAt(pcTank, x, y) >= DIRECT_DMG) {
+                        return { hit: 'pc', x, y };
+                    }
+                    const gy = terrainHeightAt(x);
+                    if (y >= gy - 4) {
+                        return { hit: 'ground', x, y: gy };
+                    }
+                }
+                return { hit: 'oob', x, y };
+            }
+
+            function pickPcShot() {
+                let best = { score: Infinity, angle: 50, power: 70 };
+                const trials = 140;
+                for (let i = 0; i < trials; i++) {
+                    const angle = 22 + Math.random() * 62;
+                    const power = 38 + Math.random() * 76;
+                    const end = simulateShot(pcTank.x, pcTank.y, angle, power, -1);
+                    const dmgYou = damageAt(playerTank, end.x, end.y);
+                    const dist = Math.hypot(end.x - playerTank.x, end.y - playerTank.y);
+                    let score = dist;
+                    if (dmgYou >= DIRECT_DMG) score -= 500;
+                    else if (dmgYou > 0) score -= dmgYou * 4;
+                    if (end.hit === 'pc') score += 300;
+                    if (Math.random() < 0.15) score += (Math.random() - 0.5) * 40;
+                    if (score < best.score) {
+                        best = { score, angle, power };
+                    }
+                }
+                best.angle += (Math.random() - 0.5) * 5;
+                best.power += (Math.random() - 0.5) * 10;
+                best.angle = Math.max(20, Math.min(85, best.angle));
+                best.power = Math.max(35, Math.min(115, best.power));
+                return { angle: best.angle, power: best.power };
+            }
+
+            function addExplosion(x, y, big) {
+                explosions.push({ x, y, t: 0, big: !!big });
+            }
+
+            function applyDamage(px, py) {
+                let line = '';
+                const dYou = damageAt(playerTank, px, py);
+                const dPc = damageAt(pcTank, px, py);
+                if (dYou > 0) {
+                    hpYou = Math.max(0, hpYou - dYou);
+                    hpYouEl.textContent = String(hpYou);
+                    line += 'You took ' + dYou + ' damage. ';
+                }
+                if (dPc > 0) {
+                    hpPc = Math.max(0, hpPc - dPc);
+                    hpPcEl.textContent = String(hpPc);
+                    line += 'PC took ' + dPc + ' damage. ';
+                }
+                if (!line) line = 'Miss.';
+                return line.trim();
+            }
+
+            function checkGameOver() {
+                if (hpYou <= 0) {
+                    turn = 'over';
+                    messageEl.textContent = 'Game over — PC wins.';
+                    messageEl.className = 'gameover-lose';
+                    fireBtn.disabled = true;
+                    angleRange.disabled = true;
+                    powerRange.disabled = true;
+                    return true;
+                }
+                if (hpPc <= 0) {
+                    turn = 'over';
+                    messageEl.textContent = 'You win — nice shooting!';
+                    messageEl.className = 'gameover-win';
+                    fireBtn.disabled = true;
+                    angleRange.disabled = true;
+                    powerRange.disabled = true;
+                    return true;
+                }
+                return false;
+            }
+
+            function startProjectile(fromX, fromY, angleDeg, power, dir, shooter) {
+                const rad = (angleDeg * Math.PI) / 180;
+                projectile = {
+                    x: fromX,
+                    y: fromY,
+                    vx: dir * Math.cos(rad) * power,
+                    vy: -Math.sin(rad) * power,
+                    shooter
+                };
+                turn = 'flying';
+                fireBtn.disabled = true;
+                angleRange.disabled = true;
+                powerRange.disabled = true;
+            }
+
+            function endFlight(impactX, impactY, summary) {
+                const shooter = projectile.shooter;
+                projectile = null;
+                addExplosion(impactX, impactY, true);
+                messageEl.textContent = summary;
+                if (checkGameOver()) return;
+                if (turn === 'over') return;
+                if (shooter === 'player') {
+                    turn = 'pc';
+                    messageEl.textContent = summary + ' PC is aiming…';
+                    window.setTimeout(function () {
+                        if (turn !== 'pc') return;
+                        const shot = pickPcShot();
+                        startProjectile(pcTank.x, pcTank.y, shot.angle, shot.power, -1, 'pc');
+                    }, 900);
+                } else {
+                    turn = 'player';
+                    newWind();
+                    messageEl.textContent = summary + ' Your turn.';
+                    fireBtn.disabled = false;
+                    angleRange.disabled = false;
+                    powerRange.disabled = false;
+                }
+            }
+
+            function firePlayer() {
+                if (turn !== 'player') return;
+                const angle = Number(angleRange.value);
+                const power = Number(powerRange.value);
+                startProjectile(playerTank.x, playerTank.y, angle, power, 1, 'player');
+            }
+
+            function updateProjectile() {
+                if (!projectile) return;
+                const p = projectile;
+                p.x += p.vx + wind;
+                p.y += p.vy;
+                p.vy += G;
+                if (p.x < -20 || p.x > LW + 20 || p.y > LH + 100) {
+                    endFlight(p.x, Math.min(p.y, LH), applyDamage(p.x, p.y));
+                    return;
+                }
+                const hitYou = damageAt(playerTank, p.x, p.y) >= DIRECT_DMG;
+                const hitPc = damageAt(pcTank, p.x, p.y) >= DIRECT_DMG;
+                if (hitYou || hitPc) {
+                    endFlight(p.x, p.y, applyDamage(p.x, p.y));
+                    return;
+                }
+                const gy = terrainHeightAt(p.x);
+                if (p.y >= gy - 4) {
+                    endFlight(p.x, gy, applyDamage(p.x, gy));
+                }
+            }
+
+            function drawSky() {
+                const g = ctx.createLinearGradient(0, 0, 0, LH);
+                g.addColorStop(0, '#3b5f8f');
+                g.addColorStop(0.45, '#1e3a5f');
+                g.addColorStop(1, '#0f172a');
+                ctx.fillStyle = g;
+                ctx.fillRect(0, 0, LW, LH);
+            }
+
+            function drawTerrain() {
+                ctx.beginPath();
+                ctx.moveTo(0, LH);
+                for (let x = 0; x < LW; x++) {
+                    ctx.lineTo(x, terrain[x]);
+                }
+                ctx.lineTo(LW, LH);
+                ctx.closePath();
+                const g = ctx.createLinearGradient(0, LH * 0.4, 0, LH);
+                g.addColorStop(0, '#3d4f2e');
+                g.addColorStop(1, '#1a2314');
+                ctx.fillStyle = g;
+                ctx.fill();
+                ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(0, terrain[0]);
+                for (let x = 1; x < LW; x++) {
+                    ctx.lineTo(x, terrain[x]);
+                }
+                ctx.stroke();
+            }
+
+            function drawTank(t) {
+                ctx.save();
+                ctx.translate(t.x, t.y);
+                ctx.scale(t.facing, 1);
+                ctx.fillStyle = '#334155';
+                ctx.fillRect(-18, -10, 36, 12);
+                ctx.fillStyle = '#475569';
+                ctx.beginPath();
+                ctx.arc(0, -14, 10, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = '#64748b';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(6, -10);
+                ctx.lineTo(22, -8);
+                ctx.stroke();
+                ctx.restore();
+            }
+
+            function drawProjectile() {
+                if (!projectile) return;
+                ctx.fillStyle = '#fef08a';
+                ctx.beginPath();
+                ctx.arc(projectile.x, projectile.y, 5, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = '#facc15';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+            }
+
+            function updateExplosions(dt) {
+                for (let i = explosions.length - 1; i >= 0; i--) {
+                    const e = explosions[i];
+                    e.t += dt;
+                    if (e.t > 0.55) explosions.splice(i, 1);
+                }
+            }
+
+            function drawExplosions() {
+                explosions.forEach(function (e) {
+                    const k = e.t / 0.55;
+                    const r = (e.big ? 55 : 30) * (0.2 + k * 0.9);
+                    const alpha = 1 - k;
+                    ctx.fillStyle = 'rgba(251, 146, 60, ' + (alpha * 0.7).toFixed(2) + ')';
+                    ctx.beginPath();
+                    ctx.arc(e.x, e.y, r, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.fillStyle = 'rgba(254, 243, 199, ' + (alpha * 0.5).toFixed(2) + ')';
+                    ctx.beginPath();
+                    ctx.arc(e.x, e.y, r * 0.45, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+            }
+
+            let lastT = performance.now();
+            function frame(now) {
+                const dt = Math.min(0.05, (now - lastT) / 1000);
+                lastT = now;
+                updateProjectile();
+                updateExplosions(dt);
+
+                drawSky();
+                drawTerrain();
+                drawTank(playerTank);
+                drawTank(pcTank);
+                drawProjectile();
+                drawExplosions();
+
+                requestAnimationFrame(frame);
+            }
+
+            angleRange.addEventListener('input', syncSliders);
+            powerRange.addEventListener('input', syncSliders);
+            fireBtn.addEventListener('click', firePlayer);
+            document.addEventListener('keydown', function (ev) {
+                if (turn !== 'player' || fireBtn.disabled) return;
+                if (ev.key === 'Enter' || ev.key === ' ') {
+                    if (ev.target === fireBtn || ev.target.tagName !== 'INPUT') {
+                        ev.preventDefault();
+                        firePlayer();
+                    }
+                }
+            });
+
+            resetMatch();
+            syncSliders();
+            requestAnimationFrame(frame);
+        })();
+    </script>
+    <script src="../../js/game-chrome.js"></script>
+    <script>
+        mountGameChrome({
+            mount: '#game-container',
+            prepend: true,
+            gamesUrl: '../../index.html',
+            gamesLabel: 'All games',
+            reloadLabel: 'Reload',
+            toolbarAriaLabel: 'Game menu'
+        });
+        document.documentElement.style.setProperty('--game-chrome-bg', 'rgba(15, 23, 42, 0.92)');
+        document.documentElement.style.setProperty('--game-chrome-text', '#e2e8f0');
+        document.documentElement.style.setProperty('--game-chrome-border', 'rgba(148, 163, 184, 0.35)');
+    </script>
+</body>
+</html>
