@@ -74,10 +74,25 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            font-size: 80px;
             pointer-events: none;
             opacity: 0;
             transition: opacity 0.3s ease, transform 0.5s ease;
+            background: rgba(255, 255, 255, 0.4);
+            padding: 20px 40px;
+            border-radius: 24px;
+            backdrop-filter: blur(4px);
+            display: flex;
+            flex-direction: column; /* Stack vertically */
+            align-items: center;
+            justify-content: center;
+        }
+        #feedback-score {
+            font-weight: bold;
+            line-height: 1;
+            margin-bottom: 5px;
+        }
+        #feedback-emoji {
+            line-height: 1;
         }
         #feedback.show {
             opacity: 1;
@@ -92,6 +107,16 @@
             color: #94a3b8;
             font-size: 14px;
             pointer-events: none;
+        }
+        #aim-coords {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            font-size: 10px;
+            color: rgba(226, 240, 226, 0.3);
+            pointer-events: none;
+            font-family: monospace;
+            text-shadow: none;
         }
         /* Joystick Styles */
         .joystick {
@@ -147,8 +172,12 @@
                 <div id="windBox" style="color: #94a3b8; font-size: 18px; font-weight: bold;">Wind: <span id="windVal">Calm</span></div>
                 <div id="trophyBox" style="font-size: 24px; margin-top: 5px;"></div>
             </div>
-            <div id="feedback" role="status" aria-live="polite"></div>
+            <div id="feedback" role="status" aria-live="polite">
+                <div id="feedback-score"></div>
+                <div id="feedback-emoji"></div>
+            </div>
             <div id="instructions">Move to aim, Click/Tap to shoot</div>
+            <div id="aim-coords"></div>
             
             <div class="joystick" id="joystick">
                 <div class="joystick__ring"></div>
@@ -163,8 +192,11 @@
             const ctx = canvas.getContext('2d');
             const scoreEl = document.getElementById('scoreVal');
             const feedbackEl = document.getElementById('feedback');
+            const feedbackScore = document.getElementById('feedback-score');
+            const feedbackEmoji = document.getElementById('feedback-emoji');
             const windEl = document.getElementById('windVal');
             const trophyBox = document.getElementById('trophyBox');
+            const aimCoordsEl = document.getElementById('aim-coords');
             const joystickEl = document.getElementById('joystick');
             const joystickKnob = document.getElementById('joystickKnob');
 
@@ -177,7 +209,8 @@
             let stuckArrows = []; // Array to store hit arrows
             let mouse = { x: 0, y: 0 };
             
-            const EMOJI_POOL = ['🚀', '🌈', '💎', '🔥', '✨', '🦄', '🍕', '🎉', '🌟', '👾', '🍀', '🎸', '🍦', '🛸', '👑'];
+            const EPIC_EMOJI_POOL = ['🚀', '💎', '🔥', '✨', '👑', '🌌', '🌋', '🛸', '🎖️', '☄️'];
+            const POSITIVE_EMOJI_POOL = ['💎', '🦄', '🍕', '🎉', '🌟', '👾', '🍀', '🎸', '🍦', '🥳', '😎', '🍪'];
             const SAD_EMOJI_POOL = ['😟', '😢', '🥺', '😕', '🤕', '🥀', '📉', '💔'];
             
             // Joystick logic
@@ -306,7 +339,7 @@
 
                 if (gameState === 'aiming') {
                     mouse.x = W / 2;
-                    mouse.y = H / 2;
+                    mouse.y = H  *0.45;
                 }
             }
 
@@ -439,7 +472,6 @@
                 if (isStuck) {
                     ctx.rotate(angle + Math.PI / 2); // Align with radial vector
                     ctx.rotate(tiltFactor * 0.4); // Tilt outwards
-                    ctx.translate(0, -10); // Offset tip slightly into target
                 } else {
                     // Interpolate tilt during flight (0 at start, full at target)
                     const flightTiltProgress = z / TARGET_Z;
@@ -451,17 +483,17 @@
                 ctx.strokeStyle = '#8d6e63';
                 ctx.lineWidth = 4;
                 ctx.beginPath();
-                ctx.moveTo(0, 0);
-                ctx.lineTo(0, 100);
+                ctx.moveTo(0, 10); // Start shaft at base of tip
+                ctx.lineTo(0, 110);
                 ctx.stroke();
 
                 // Fletching
                 ctx.fillStyle = '#f44336';
                 ctx.beginPath();
-                ctx.moveTo(-10, 80);
-                ctx.lineTo(0, 70);
-                ctx.lineTo(10, 80);
-                ctx.lineTo(0, 100);
+                ctx.moveTo(-10, 90);
+                ctx.lineTo(0, 80);
+                ctx.lineTo(10, 90);
+                ctx.lineTo(0, 110);
                 ctx.closePath();
                 ctx.fill();
 
@@ -469,9 +501,9 @@
                 if (z > TARGET_Z * 0.8 || !isStuck) {
                     ctx.fillStyle = '#9e9e9e';
                     ctx.beginPath();
-                    ctx.moveTo(-5, 0);
-                    ctx.lineTo(5, 0);
-                    ctx.lineTo(0, -10);
+                    ctx.moveTo(-5, 10); // Base of tip
+                    ctx.lineTo(5, 10);
+                    ctx.lineTo(0, 0); // POINT of tip at exactly 0,0
                     ctx.closePath();
                     ctx.fill();
                 }
@@ -479,14 +511,25 @@
                 ctx.restore();
             }
 
-            function showFeedback(text, color, isBig) {
-                feedbackEl.textContent = text;
-                feedbackEl.style.color = color || '#fff';
-                feedbackEl.style.fontSize = isBig ? '160px' : '80px';
+            function showFeedback(emoji, scoreText, color, isBig) {
+                feedbackEmoji.textContent = emoji;
+                feedbackScore.textContent = scoreText || "";
+                feedbackScore.style.color = color || '#fff';
+                
+                // Scale font size relative to target diameter (RAD_OUTER_MAX)
+                const targetDiameter = RAD_OUTER_MAX;
+                const emojiSize = isBig ? targetDiameter * 1.2 : targetDiameter * 0.7;
+                
+                // Score is 10 times smaller than emoji as requested
+                const scoreSize = emojiSize * 0.1;
+                
+                feedbackEmoji.style.fontSize = emojiSize + 'px';
+                feedbackScore.style.fontSize = scoreSize + 'px';
+                
                 feedbackEl.classList.add('show');
                 setTimeout(() => {
                     feedbackEl.classList.remove('show');
-                }, 1500);
+                }, 1500); 
             }
 
             function updateWind() {
@@ -527,7 +570,7 @@
                 if (!success) {
                     score = 0;
                     scoreEl.textContent = score;
-                    showFeedback('👎', '#f44336');
+                    showFeedback('👎', '', '#f44336');
                     stuckArrows = []; // Clear arrows on miss
                     trophyCount = 0;
                     trophyBox.textContent = "";
@@ -541,35 +584,41 @@
 
             function checkHit() {
                 const dist = Math.hypot(arrow.x - TARGET_X, arrow.y - TARGET_Y);
-                const perspectiveScale = 0.5;
+                const perspectiveScale = 1;//0.5;
                 const actualDist = dist / perspectiveScale;
 
-                if (actualDist < RAD_CENTER) {
-                    const randomEmoji = EMOJI_POOL[Math.floor(Math.random() * EMOJI_POOL.length)];
-                    showFeedback(randomEmoji, '#4ade80', true);
+                // Added 5 unit buffer to center detection for better feel and to match visual stroke
+                if (actualDist < RAD_CENTER + 0) {
+                    const randomEmoji = EPIC_EMOJI_POOL[Math.floor(Math.random() * EPIC_EMOJI_POOL.length)];
+                    showFeedback(randomEmoji, '', '#000000', true); // Center is black/infinity
                     score += 100;
                     scoreEl.textContent = "∞"; // Always only infinity
                     trophyCount++;
                     trophyBox.textContent += randomEmoji;
                     stuckArrows.push({ x: arrow.x, y: arrow.y, z: arrow.z });
                     resetGame(true);
-                } else if (actualDist < RAD_INNER_MAX) {
+                } else if (actualDist < RAD_INNER_MAX + 0) {
                     const angle = Math.atan2(arrow.y - TARGET_Y, arrow.x - TARGET_X) + Math.PI / 2;
                     let sector = Math.floor(((angle + Math.PI * 2) % (Math.PI * 2)) / (Math.PI * 2 / 4)) + 1;
                     const points = 12 + sector;
                     score += points;
                     if (scoreEl.textContent !== "∞") scoreEl.textContent = score;
-                    showFeedback('+' + points, '#4ade80');
+                    
+                    const randomEmoji = POSITIVE_EMOJI_POOL[Math.floor(Math.random() * POSITIVE_EMOJI_POOL.length)];
+                    const sectorColor = sector % 2 === 0 ? '#3f51b5' : '#4ade80';
+                    showFeedback(randomEmoji, '+' + points, sectorColor);
+                    
                     stuckArrows.push({ x: arrow.x, y: arrow.y, z: arrow.z });
                     resetGame(true);
-                } else if (actualDist < RAD_OUTER_MAX) {
+                } else if (actualDist < RAD_OUTER_MAX + 0) {
                     const angle = Math.atan2(arrow.y - TARGET_Y, arrow.x - TARGET_X) + Math.PI / 2;
                     let sector = Math.floor(((angle + Math.PI * 2) % (Math.PI * 2)) / (Math.PI * 2 / 12)) + 1;
                     score += sector;
                     if (scoreEl.textContent !== "∞") scoreEl.textContent = score;
                     
                     const sadEmoji = SAD_EMOJI_POOL[Math.floor(Math.random() * SAD_EMOJI_POOL.length)];
-                    showFeedback(sadEmoji + ' +' + sector, '#fefefe');
+                    const sectorColor = sector % 2 === 0 ? '#555555' : '#e53935'; // Match outer ring colors
+                    showFeedback(sadEmoji, '+' + sector, sectorColor);
                     
                     stuckArrows.push({ x: arrow.x, y: arrow.y, z: arrow.z });
                     resetGame(true);
@@ -580,12 +629,23 @@
 
             function update() {
                 if (gameState === 'flying') {
-                    arrow.x += arrow.vx + (wind * (arrow.z / TARGET_Z)); // Wind affects x, stronger as it goes deeper
+                    // Store previous state for interpolation
+                    const oldX = arrow.x;
+                    const oldY = arrow.y;
+                    const oldZ = arrow.z;
+
+                    arrow.x += arrow.vx + (wind * (arrow.z / TARGET_Z));
                     arrow.y += arrow.vy;
                     arrow.z += arrow.vz;
                     arrow.vy += 0.05;
 
                     if (arrow.z >= TARGET_Z) {
+                        // Interpolate exact x and y at TARGET_Z
+                        const t = (TARGET_Z - oldZ) / (arrow.z - oldZ);
+                        arrow.x = oldX + (arrow.x - oldX) * t;
+                        arrow.y = oldY + (arrow.y - oldY) * t;
+                        arrow.z = TARGET_Z;
+
                         gameState = 'result';
                         checkHit();
                     }
@@ -594,6 +654,9 @@
 
             function draw() {
                 ctx.clearRect(0, 0, W, H);
+                
+                // Update Aim Coordinates in HUD
+                aimCoordsEl.textContent = `X: ${Math.round(mouse.x)} Y: ${Math.round(mouse.y)}`;
 
                 // Sky
                 const skyGrd = ctx.createLinearGradient(0, 0, 0, H);
@@ -644,7 +707,7 @@
                     drawArrow(W/2, H - 50, 0, true, false);
                 }
 
-                if (gameState === 'flying' || gameState === 'result') {
+                if (gameState === 'flying') {
                     drawArrow(arrow.x, arrow.y, arrow.z, true, false);
                 }
 
@@ -690,6 +753,10 @@
         document.documentElement.style.setProperty('--game-chrome-bg', 'rgba(10, 20, 10, 0.92)');
         document.documentElement.style.setProperty('--game-chrome-text', '#e2f0e2');
         document.documentElement.style.setProperty('--game-chrome-border', 'rgba(148, 184, 148, 0.35)');
+    </script>
+</body>
+</html>
+');
     </script>
 </body>
 </html>
