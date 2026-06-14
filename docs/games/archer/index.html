@@ -178,6 +178,7 @@
             let mouse = { x: 0, y: 0 };
             
             const EMOJI_POOL = ['🚀', '🌈', '💎', '🔥', '✨', '🦄', '🍕', '🎉', '🌟', '👾', '🍀', '🎸', '🍦', '🛸', '👑'];
+            const SAD_EMOJI_POOL = ['😟', '😢', '🥺', '😕', '🤕', '🥀', '📉', '💔'];
             
             // Joystick logic
             let joystickVec = { x: 0, y: 0 };
@@ -566,7 +567,10 @@
                     let sector = Math.floor(((angle + Math.PI * 2) % (Math.PI * 2)) / (Math.PI * 2 / 12)) + 1;
                     score += sector;
                     if (scoreEl.textContent !== "∞") scoreEl.textContent = score;
-                    showFeedback('+' + sector, '#fefefe');
+                    
+                    const sadEmoji = SAD_EMOJI_POOL[Math.floor(Math.random() * SAD_EMOJI_POOL.length)];
+                    showFeedback(sadEmoji + ' +' + sector, '#fefefe');
+                    
                     stuckArrows.push({ x: arrow.x, y: arrow.y, z: arrow.z });
                     resetGame(true);
                 } else {
