@@ -177,6 +177,8 @@
             let stuckArrows = []; // Array to store hit arrows
             let mouse = { x: 0, y: 0 };
             
+            const EMOJI_POOL = ['🚀', '🌈', '💎', '🔥', '✨', '🦄', '🍕', '🎉', '🌟', '👾', '🍀', '🎸', '🍦', '🛸', '👑'];
+            
             // Joystick logic
             let joystickVec = { x: 0, y: 0 };
             let joystickActive = false;
@@ -224,6 +226,12 @@
                             }
                         } catch (_) {}
                     }
+                    
+                    // Trigger shot on release if joystick was active
+                    if (joystickActive) {
+                        shoot();
+                    }
+
                     joystickPointerId = null;
                     joystickActive = false;
                     joystickVec.x = 0;
@@ -481,9 +489,9 @@
             }
 
             function updateWind() {
-                // Wind range from -1.5 to 1.5
-                wind = (Math.random() - 0.5) * 3;
-                if (Math.abs(wind) < 0.2) {
+                // Wind range from -3.0 to 3.0 (increased from 1.5)
+                wind = (Math.random() - 0.5) * 6;
+                if (Math.abs(wind) < 0.3) {
                     windEl.textContent = "Calm";
                     windEl.style.color = "#94a3b8";
                 } else {
@@ -536,11 +544,12 @@
                 const actualDist = dist / perspectiveScale;
 
                 if (actualDist < RAD_CENTER) {
-                    showFeedback('🏆', '#4ade80', true);
+                    const randomEmoji = EMOJI_POOL[Math.floor(Math.random() * EMOJI_POOL.length)];
+                    showFeedback(randomEmoji, '#4ade80', true);
                     score += 100;
                     scoreEl.textContent = "∞"; // Always only infinity
                     trophyCount++;
-                    trophyBox.textContent = "🏆".repeat(trophyCount);
+                    trophyBox.textContent += randomEmoji;
                     stuckArrows.push({ x: arrow.x, y: arrow.y, z: arrow.z });
                     resetGame(true);
                 } else if (actualDist < RAD_INNER_MAX) {
